@@ -1,0 +1,73 @@
+load("@rules_license//rules:license.bzl", "license")
+load("@com_github_optimad_bitpit//:defs.bzl", "bitpit_library")
+
+package(
+    default_applicable_licenses = [":license"],
+)
+
+license(
+    name = "license",
+    license_kinds = [
+        "@rules_license//licenses/spdx:LGPL-3.0",
+    ],
+    license_text = "LICENSE.md",
+)
+
+exports_files(["LICENSE.md"])
+
+cc_binary(
+    name = "bitpit",
+    linkshared = 1,  # LGPL-3.0 restriction
+    visibility = ["//visibility:public"],
+    deps = [":PABLO"],
+)
+
+cc_library(
+    name = "bitpit_mpi",
+    defines = ["BITPIT_ENABLE_MPI=1"],
+    deps = ["@mpi"],
+)
+
+bitpit_library(
+    name = "communications",
+    deps = [
+        ":IO",
+        ":containers",
+    ],
+)
+
+bitpit_library(
+    name = "common",
+    deps = [":bitpit_mpi"],
+)
+
+bitpit_library(
+    name = "operators",
+    deps = [":bitpit_mpi"],
+)
+
+bitpit_library(
+    name = "containers",
+    deps = [":common"],
+)
+
+bitpit_library(
+    name = "IO",
+    deps = [
+        ":common",
+        ":containers",
+        ":operators",
+        "@libxml2//:libxml",
+    ],
+)
+
+bitpit_library(
+    name = "PABLO",
+    deps = [
+        ":IO",
+        ":common",
+        ":communications",
+        ":containers",
+        ":operators",
+    ],
+)
