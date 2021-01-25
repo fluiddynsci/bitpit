@@ -1,5 +1,5 @@
 load("@rules_license//rules:license.bzl", "license")
-load("@com_github_optimad_bitpit//:defs.bzl", "bitpit_library")
+load("@com_github_optimad_bitpit//:defs.bzl", "bitpit_library", "bitpit_binary")
 
 package(
     default_applicable_licenses = [":license"],
@@ -15,7 +15,7 @@ license(
 
 exports_files(["LICENSE.md"])
 
-cc_binary(
+bitpit_binary(
     name = "bitpit",
     linkshared = 1,  # LGPL-3.0 restriction
     visibility = ["//visibility:public"],
