@@ -206,9 +206,9 @@ public:
     bool        getIsGhost() const;
     int         getGhostLayer() const;
     bool        getBalance() const;
+    void        setMarker(int8_t marker);
 protected:
     void        setBound(uint8_t face);
-    void        setMarker(int8_t marker);
     void        setBalance(bool balance);
     void        setLevel(uint8_t level);
     void        setPbound(uint8_t face, bool flag);
@@ -218,9 +218,12 @@ protected:
     // OTHER GET/SET METHODS
     // =================================================================================== //
 public:
+    TreeConstants   getTreeConstants() const;
+    uint32_t        getLogicalSize(const bitpit::TreeConstants &treeConstants) const;
     uint32_t        getLogicalSize() const;
     uint64_t        getLogicalArea() const;
     uint64_t        getLogicalVolume() const;
+    darray3         getLogicalCenter(uint32_t logicalSize) const;
     darray3         getLogicalCenter() const;
     darray3         getLogicalFaceCenter(uint8_t iface) const;
     darray3         getLogicalEdgeCenter(uint8_t iedge) const;
@@ -259,6 +262,69 @@ protected:
     std::array<int64_t,3> getEdgePeriodicCoord(uint8_t iedge) const;
     uint8_t getFamilySplittingNode() const;
 };
+
+// =================================================================================== //
+
+/*! Get the level of an octant.
+ * \return Level of octant.
+ */
+inline uint8_t
+Octant::getLevel() const{return m_level;};
+
+/*! Set the refinement marker of an octant.
+ * \param[in] marker Refinement marker of octant (n=n refinement in adapt, -n=n coarsening in adapt, default=0).
+ */
+inline void
+Octant::setMarker(int8_t marker){
+	if (marker != m_marker)
+		m_info[OctantInfo::INFO_AUX] = true;
+	this->m_marker = marker;
+};
+
+/*! Get the coordinates of the center of an octant in logical domain.
+ * \return Array[3] with the coordinates of the center of octant.
+ */
+inline darray3
+Octant::getLogicalCenter(uint32_t logicalSize) const{
+	double	dh;
+	darray3 center;
+
+	dh = double(logicalSize)*0.5;
+	center[0] = (double)m_x + dh;
+	center[1] = (double)m_y + dh;
+	center[2] = (double)m_z + double(m_dim-2)*dh;
+	return center;
+};
+
+/*! Get the coordinates of the center of an octant in logical domain.
+ * \return Array[3] with the coordinates of the center of octant.
+ */
+inline darray3
+Octant::getLogicalCenter() const{
+    return getLogicalCenter(getLogicalSize());
+};
+
+/*! Get the size of an octant in logical domain, i.e. the side length.
+ * \return Size of octant.
+ */
+inline uint32_t
+Octant::getLogicalSize(const bitpit::TreeConstants &treeConstants) const{
+	return treeConstants.lengths[m_level];
+};
+
+/*! Get the size of an octant in logical domain, i.e. the side length.
+ * \return Size of octant.
+ */
+inline uint32_t
+Octant::getLogicalSize() const{
+    return getLogicalSize(sm_treeConstants[m_dim]);
+};
+
+inline bitpit::TreeConstants
+Octant::getTreeConstants() const{
+    return sm_treeConstants[m_dim];
+}
+
 
 }
 

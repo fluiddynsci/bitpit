@@ -189,9 +189,9 @@ namespace bitpit {
         // =================================================================================== //
     public:
 #if BITPIT_ENABLE_MPI==1
-        ParaTree(const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
-        ParaTree(uint8_t dim, const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
-        ParaTree(std::istream &stream, const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
+        ParaTree(sycl::queue queue, const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
+        ParaTree(uint8_t dim, sycl::queue queue,const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
+        ParaTree(std::istream &stream, sycl::queue queue,const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
 #else
         ParaTree(const std::string &logfile = DEFAULT_LOG_FILE);
         ParaTree(uint8_t dim, const std::string &logfile = DEFAULT_LOG_FILE);
@@ -234,6 +234,7 @@ namespace bitpit {
         void		freeComm();
         MPI_Comm	getComm() const;
         bool		isCommSet() const;
+        Map & getMap() { return m_trans; }
 #endif
         const std::vector<uint64_t> &getPartitionRangeGlobalIdx() const;
         const std::vector<uint64_t> &getPartitionFirstDesc() const;
@@ -282,6 +283,7 @@ namespace bitpit {
         double 		getVolume(uint32_t idx) const;
         void 		getCenter(uint32_t idx, darray3& center) const;
         darray3 	getCenter(uint32_t idx) const;
+        darray3 	getCenter(darray3 &logicalCenter) const;
         darray3 	getFaceCenter(uint32_t idx, uint8_t iface) const;
         void 		getFaceCenter(uint32_t idx, uint8_t iface, darray3& center) const;
         darray3 	getNode(uint32_t idx, uint8_t inode) const;
@@ -773,7 +775,7 @@ namespace bitpit {
                 }
 
                 m_octree.m_octants.resize(newSizeOctants);
-                m_octree.m_octants.shrink_to_fit();
+                //m_octree.m_octants.shrink_to_fit();
                 m_octree.m_sizeOctants = m_octree.m_octants.size();
 
                 if (userData) {
@@ -887,7 +889,7 @@ namespace bitpit {
 
                 if (newSizeOctants < m_octree.m_sizeOctants) {
                     m_octree.m_octants.resize(newSizeOctants);
-                    m_octree.m_octants.shrink_to_fit();
+                    //m_octree.m_octants.shrink_to_fit();
                     m_octree.m_sizeOctants = m_octree.m_octants.size();
 
                     if (userData) {
@@ -939,6 +941,16 @@ namespace bitpit {
 
     };
 
+    /*! Get the coordinates of the center of an octant.
+     * \param[in] idx Local index of target octant.
+     * \return center Coordinates of the center of octant.
+     */
+    inline darray3
+    ParaTree::getCenter(darray3 &logicalCentre) const {
+        darray3 center;
+        m_trans.mapCenter(logicalCentre, center);
+        return center;
+    }
 }
 
 #endif /* __BITPIT_PARA_TREE_HPP__ */

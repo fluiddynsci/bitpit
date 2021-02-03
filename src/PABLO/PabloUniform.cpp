@@ -50,7 +50,7 @@ namespace bitpit {
     /*!
      * \param[in] comm The MPI communicator used by the parallel octree. MPI_COMM_WORLD is the default value.
      */
-    PabloUniform::PabloUniform(const std::string &logfile, MPI_Comm comm):ParaTree(logfile,comm){
+    PabloUniform::PabloUniform(sycl::queue queue, const std::string &logfile, MPI_Comm comm):ParaTree(queue,logfile,comm){
 #else
     PabloUniform::PabloUniform(const std::string &logfile):ParaTree(logfile){
 #endif
@@ -66,7 +66,7 @@ namespace bitpit {
     /*!
      * \param[in] comm The MPI communicator used by the parallel octree. MPI_COMM_WORLD is the default value.
      */
-    PabloUniform::PabloUniform(uint8_t dim, const std::string &logfile, MPI_Comm comm):ParaTree(dim,logfile,comm){
+    PabloUniform::PabloUniform(uint8_t dim, sycl::queue queue, const std::string &logfile, MPI_Comm comm):ParaTree(dim,queue,logfile,comm){
 #else
     PabloUniform::PabloUniform(uint8_t dim, const std::string &logfile):ParaTree(dim,logfile){
 #endif
@@ -86,7 +86,7 @@ namespace bitpit {
     /*!
      * \param[in] comm The MPI communicator used by the parallel octree. MPI_COMM_WORLD is the default value.
      */
-    PabloUniform::PabloUniform(double X, double Y, double Z, double L, uint8_t dim, const std::string &logfile, MPI_Comm comm):ParaTree(dim,logfile,comm){
+    PabloUniform::PabloUniform(double X, double Y, double Z, double L, sycl::queue queue, uint8_t dim, const std::string &logfile, MPI_Comm comm):ParaTree(dim,queue,logfile,comm){
 #else
     PabloUniform::PabloUniform(double X, double Y, double Z, double L, uint8_t dim, const std::string &logfile):ParaTree(dim,logfile){
 #endif

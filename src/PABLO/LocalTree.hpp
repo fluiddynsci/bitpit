@@ -31,6 +31,7 @@
 #include "tree_constants.hpp"
 #include "Octant.hpp"
 #include "Intersection.hpp"
+#include <CL/sycl.hpp>
 
 namespace bitpit {
 
@@ -38,7 +39,9 @@ namespace bitpit {
 // TYPEDEFS
 // =================================================================================== //
 
-typedef std::vector<Octant>		 		octvector;
+// typedef std::vector<Octant>		 		octvector;
+typedef sycl::usm_allocator<Octant, sycl::usm::alloc::shared> octalloc;
+typedef std::vector<Octant, octalloc>		 		octvector;
 typedef std::vector<Intersection>	 	intervector;
 
 // =================================================================================== //
@@ -83,11 +86,11 @@ public:
 
 	/*!Vector of Octants.
 	 */
-	typedef std::vector<Octant>				 	octvector;
+	//typedef std::vector<Octant>				 	octvector;
 
 	/*!Vector of Intersections.
 	 */
-	typedef std::vector<Intersection>	 		intervector;
+	//typedef std::vector<Intersection>	 		intervector;
 
 	/*!Vector of boolean values.
 	 */
@@ -142,8 +145,10 @@ private:
 	// =================================================================================== //
 	// CONSTRUCTORS
 	// =================================================================================== //
-	LocalTree();
-	LocalTree(uint8_t dim);
+	// LocalTree();
+	LocalTree(sycl::queue queue);
+	// LocalTree(uint8_t dim);
+	LocalTree(uint8_t dim, sycl::queue queue);
 
 	// =================================================================================== //
 	// METHODS

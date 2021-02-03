@@ -134,12 +134,12 @@ namespace bitpit {
     /*!
      * \param[in] comm The MPI communicator used by the parallel octree. MPI_COMM_WORLD is the default value.
      */
-    ParaTree::ParaTree(const std::string &logfile, MPI_Comm comm )
+    ParaTree::ParaTree(sycl::queue queue, const std::string &logfile, MPI_Comm comm) 
 #else
     ParaTree::ParaTree(const std::string &logfile )
 #endif
 #if BITPIT_ENABLE_MPI==1
-        : m_comm(MPI_COMM_NULL)
+        : m_comm(MPI_COMM_NULL), m_octree(queue)
 #endif
     {
 #if BITPIT_ENABLE_MPI==1
@@ -159,11 +159,11 @@ namespace bitpit {
     /*!
      * \param[in] comm The MPI communicator used by the parallel octree. MPI_COMM_WORLD is the default value.
      */
-    ParaTree::ParaTree(uint8_t dim, const std::string &logfile, MPI_Comm comm )
+    ParaTree::ParaTree(uint8_t dim, sycl::queue queue, const std::string &logfile, MPI_Comm comm) 
 #else
     ParaTree::ParaTree(uint8_t dim, const std::string &logfile )
 #endif
-        : m_octree(dim), m_trans(dim)
+        : m_octree(dim, queue), m_trans(dim)
 #if BITPIT_ENABLE_MPI==1
           , m_comm(MPI_COMM_NULL)
 #endif
@@ -189,12 +189,12 @@ namespace bitpit {
     /*!
      * \param[in] comm The MPI communicator used by the parallel octree. MPI_COMM_WORLD is the default value.
      */
-    ParaTree::ParaTree(std::istream &stream, const std::string &logfile, MPI_Comm comm)
+    ParaTree::ParaTree(std::istream &stream, sycl::queue queue, const std::string &logfile, MPI_Comm comm) 
 #else
     ParaTree::ParaTree(std::istream &stream, const std::string &logfile)
 #endif
 #if BITPIT_ENABLE_MPI==1
-        : m_comm(MPI_COMM_NULL)
+        : m_comm(MPI_COMM_NULL), m_octree(queue)
 #endif
     {
 #if BITPIT_ENABLE_MPI==1
@@ -3689,7 +3689,7 @@ namespace bitpit {
     ParaTree::adaptGlobalRefine(bool mapper_flag) {
         //TODO recoding for adapting with abs(marker) > 1
         uint32_t nocts0 = getNumOctants();
-        vector<Octant>::iterator iter, iterend = m_octree.m_octants.end();
+        octvector::iterator iter, iterend = m_octree.m_octants.end();
 
         for (iter = m_octree.m_octants.begin(); iter != iterend; ++iter){
             iter->m_info[Octant::INFO_NEW4REFINEMENT] = false;
@@ -3772,7 +3772,7 @@ namespace bitpit {
     ParaTree::adaptGlobalCoarse(bool mapper_flag) {
         //TODO recoding for adapting with abs(marker) > 1
         uint32_t nocts0 = getNumOctants();
-        vector<Octant>::iterator iter, iterend = m_octree.m_octants.end();
+        octvector::iterator iter, iterend = m_octree.m_octants.end();
 
         for (iter = m_octree.m_octants.begin(); iter != iterend; ++iter){
             iter->m_info[Octant::INFO_NEW4REFINEMENT] = false;
@@ -4499,7 +4499,7 @@ namespace bitpit {
 
         m_loadBalanceRanges.clear();
         uint32_t nocts0 = getNumOctants();
-        vector<Octant >::iterator iter, iterend = m_octree.m_octants.end();
+        octvector::iterator iter, iterend = m_octree.m_octants.end();
 
         for (iter = m_octree.m_octants.begin(); iter != iterend; ++iter){
             iter->m_info[Octant::INFO_NEW4REFINEMENT] = false;

@@ -132,14 +132,6 @@ u32array3 Map::mapCoordinates(darray3 const & X) const {
 	return coords;
 };
 
-/*! Transformation of coordinate X (physical->logical).
- * \param[in] X Coordinate X from physical domain.
- * \return Coordinate X in logical domain.
- */
-uint32_t Map::mapX(double X) const {
-	return (uint32_t)(double(m_maxLength) * X);
-};
-
 /*! Transformation of coordinate Y (physical->logical).
  * \param[in] Y Coordinate Y from physical domain.
  * \return Coordinate Y in logical domain.
@@ -185,16 +177,6 @@ double Map::mapVolume(uint64_t volume) const {
  * \param[out] mapcenter Coordinates of center in physical domain.
  */
 void Map::mapCenter(double* & center, darray3 & mapcenter) const {
-	for (int i=0; i<3; i++){
-		mapcenter[i] = m_maxLength_1 * center[i];
-	}
-};
-
-/*! Transformation of coordinates of center of an octant (logical->physical).
- * \param[in] center Array of coordinates of center from logical domain.
- * \param[out] mapcenter Coordinates of center in physical domain.
- */
-void Map::mapCenter(darray3 & center, darray3 & mapcenter) const {
 	for (int i=0; i<3; i++){
 		mapcenter[i] = m_maxLength_1 * center[i];
 	}

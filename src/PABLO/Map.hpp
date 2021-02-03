@@ -78,7 +78,8 @@ class Map{
 	// =================================================================================== //
 	// MEMBERS
 	// =================================================================================== //
-private:
+//private:
+public:
 	darray3 	m_origin;				/**<Coordinate X,Y,Z of the origin of the octree in the physical domain*/
 	double 		m_L;					/**<Side length of octree in the physical domain*/
 	uint8_t		m_dim;					/**<Space Dimension*/
@@ -126,6 +127,24 @@ private:
 	void mapNodesIntersection(u32arr3vector nodes, darr3vector & mapnodes) const;
 	void mapNormals(i8array3 normal, darray3 & mapnormal) const;
 
+};
+
+/*! Transformation of coordinate X (physical->logical).
+ * \param[in] X Coordinate X from physical domain.
+ * \return Coordinate X in logical domain.
+ */
+inline uint32_t Map::mapX(double X) const {
+	return (uint32_t)(double(m_maxLength) * X);
+};
+
+/*! Transformation of coordinates of center of an octant (logical->physical).
+ * \param[in] center Array of coordinates of center from logical domain.
+ * \param[out] mapcenter Coordinates of center in physical domain.
+ */
+inline void Map::mapCenter(darray3 & center, darray3 & mapcenter) const {
+	for (int i=0; i<3; i++){
+		mapcenter[i] = m_maxLength_1 * center[i];
+	}
 };
 
 }

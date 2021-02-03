@@ -273,12 +273,6 @@ Octant::getLogicalCoord() const {
 	return coord;
 };
 
-/*! Get the level of an octant.
- * \return Level of octant.
- */
-uint8_t
-Octant::getLevel() const{return m_level;};
-
 /*! Get the refinement marker of an octant.
  * \return Marker of octant.
  */
@@ -399,16 +393,6 @@ Octant::getGhostLayer() const{return m_ghost;};
 bool
 Octant::getBalance() const{return (m_info[OctantInfo::INFO_BALANCED]);};
 
-/*! Set the refinement marker of an octant.
- * \param[in] marker Refinement marker of octant (n=n refinement in adapt, -n=n coarsening in adapt, default=0).
- */
-void
-Octant::setMarker(int8_t marker){
-	if (marker != m_marker)
-		m_info[OctantInfo::INFO_AUX] = true;
-	this->m_marker = marker;
-};
-
 /*! Set the balancing condition of an octant.
  * \param[in] balance Has octant to be 2:1 balanced in adapting procedure?
  */
@@ -450,13 +434,6 @@ Octant::setGhostLayer(int ghostLayer){
 // OTHER GET/SET METHODS
 // =================================================================================== //
 
-/*! Get the size of an octant in logical domain, i.e. the side length.
- * \return Size of octant.
- */
-uint32_t
-Octant::getLogicalSize() const{
-	return sm_treeConstants[m_dim].lengths[m_level];
-};
 
 /*! Get the area of an octant in logical domain .
  * \return Area of octant.
@@ -474,22 +451,6 @@ Octant::getLogicalVolume() const{
 	return sm_treeConstants[m_dim].volumes[m_level];
 };
 
-// =================================================================================== //
-
-/*! Get the coordinates of the center of an octant in logical domain.
- * \return Array[3] with the coordinates of the center of octant.
- */
-darray3
-Octant::getLogicalCenter() const{
-	double	dh;
-	darray3 center;
-
-	dh = double(getLogicalSize())*0.5;
-	center[0] = (double)m_x + dh;
-	center[1] = (double)m_y + dh;
-	center[2] = (double)m_z + double(m_dim-2)*dh;
-	return center;
-};
 
 // =================================================================================== //
 

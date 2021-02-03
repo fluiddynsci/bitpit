@@ -48,7 +48,8 @@ namespace bitpit {
 
     /*!Defaut constructor.
      */
-    LocalTree::LocalTree() {
+    //LocalTree::LocalTree() {
+    LocalTree::LocalTree(sycl::queue queue) : m_octants(octalloc(queue)), m_ghosts(octalloc(queue)) {
         initialize();
         reset(false);
     };
@@ -56,7 +57,8 @@ namespace bitpit {
     /*!Dimensional and default constructor.
      * \param[in] dim Space dimension of octree.
      */
-    LocalTree::LocalTree(uint8_t dim){
+    //LocalTree::LocalTree(uint8_t dim) {
+    LocalTree::LocalTree(uint8_t dim, sycl::queue queue) : m_octants(octalloc(queue)), m_ghosts(octalloc(queue))  {
         initialize(dim);
         reset(true);
     };
@@ -465,7 +467,7 @@ namespace bitpit {
             m_sizeOctants += offset;
             m_octants.reserve(m_sizeOctants);
             m_octants.resize(m_sizeOctants, Octant(m_dim));
-            m_octants.shrink_to_fit();
+            //m_octants.shrink_to_fit();
 
             // Create new octants
             if(mapsize > 0){
@@ -644,7 +646,7 @@ namespace bitpit {
             }
         }
         m_octants.resize(nblock, Octant(m_dim));
-        m_octants.shrink_to_fit();
+        // m_octants.shrink_to_fit();
         m_sizeOctants = m_octants.size();
         if(mapsize > 0){
             mapidx.resize(m_sizeOctants);
@@ -702,7 +704,7 @@ namespace bitpit {
                         }
                     }
                     m_octants.resize(m_sizeOctants-offset, Octant(m_dim));
-                    m_octants.shrink_to_fit();
+                    // m_octants.shrink_to_fit();
                     m_sizeOctants = m_octants.size();
                     if(mapsize > 0){
                         mapidx.resize(m_sizeOctants);
@@ -812,7 +814,7 @@ namespace bitpit {
                     father.setMarker(markerfather);
                     m_octants.resize(m_sizeOctants-offset, Octant(m_dim));
                     m_octants.push_back(father);
-                    m_octants.shrink_to_fit();
+                    // m_octants.shrink_to_fit();
                     m_sizeOctants = m_octants.size();
                     if(mapsize > 0){
                         mapidx.resize(m_sizeOctants);
