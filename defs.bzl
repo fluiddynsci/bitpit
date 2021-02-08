@@ -1,4 +1,4 @@
-load("@//tools/sycl:build_defs.bzl", "sycl_library", "sycl_binary")
+load("@//tools/sycl:build_defs.bzl", "sycl_binary", "sycl_library")
 
 def bitpit_library(name, **kwargs):
     sycl_library(
