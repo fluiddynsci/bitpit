@@ -1,5 +1,6 @@
-load("@rules_license//rules:license.bzl", "license")
 load("@com_github_optimad_bitpit//:defs.bzl", "bitpit_binary", "bitpit_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_license//rules:license.bzl", "license")
 
 package(
     default_applicable_licenses = [":license"],
