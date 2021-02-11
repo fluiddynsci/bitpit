@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -168,6 +168,8 @@ void displayRowMajor(
     \param[in] A is the matrix to be displayed
     \param[in] nRows is the number of rows
     \param[in] nCols is the number of columns
+    \param[in] uplo defines if the matrix is an upper triangle ('U') or a
+    lower triangle ('L')
 */
 template<class T>
 void displayColMajorSymmetric(
@@ -195,6 +197,8 @@ void displayColMajorSymmetric(
     \param[in] A is the matrix to be displayed
     \param[in] nRows is the number of rows
     \param[in] nCols is the number of columns
+    \param[in] uplo defines if the matrix is an upper triangle ('U') or a
+    lower triangle ('L')
 */
 template<class T>
 void displayRowMajorSymmetric(

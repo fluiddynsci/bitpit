@@ -3,7 +3,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -48,7 +48,7 @@ int subtest_001(int rank)
     int dimensions(3);
 
     // Input geometry
-    std::unique_ptr<bitpit::SurfUnstructured> STL( new bitpit::SurfUnstructured(2, dimensions) );
+    std::unique_ptr<bitpit::SurfUnstructured> STL( new bitpit::SurfUnstructured(2, dimensions, MPI_COMM_NULL) );
 
     bitpit::log::cout() << " - Loading stl geometry" << std::endl;
 
@@ -83,7 +83,7 @@ int subtest_001(int rank)
     };
 
     dh = h / 16. ;
-    bitpit::VolOctree mesh(dimensions, meshMin, h, dh );
+    bitpit::VolOctree mesh(dimensions, meshMin, h, dh, MPI_COMM_WORLD);
     mesh.initializeAdjacencies();
     mesh.initializeInterfaces();
     mesh.update() ;
@@ -110,16 +110,15 @@ int subtest_001(int rank)
 
     elapsed_init = std::chrono::duration_cast<std::chrono::milliseconds>(end-start).count();
 
-    if (rank == 0) {
-        bitpit::log::cout() << " - Exporting serial levelset" << std::endl;
-        mesh.getVTK().setName("levelset_parallel_001_serial") ;
-        mesh.write() ;
-    }
+    bitpit::log::cout() << " - Exporting serial levelset" << std::endl;
+    mesh.getVTK().setName("levelset_parallel_001_serial") ;
+    mesh.write() ;
 
     // Partition the mesh over available processes
     start = std::chrono::system_clock::now();
 
-    mapper = mesh.partition(MPI_COMM_WORLD, true) ;
+    mapper = mesh.partition(true) ;
+
     levelset.partition(mapper) ;
 
     end = std::chrono::system_clock::now();

@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -88,14 +88,15 @@ void run(int rank, int nProcs)
     if (rank==0) 
         std::cout<< "2. Read snapshot for reconstruction ..." << std::endl;
 
+#if BITPIT_ENABLE_MPI
+    VolumeKernel* meshr = new VolOctree(MPI_COMM_NULL);
+#else
     VolumeKernel* meshr = new VolOctree();
+#endif
     {
         int dumpBlock = (nProcs > 1) ? rank : -1;
         std::string filename = "./data/test.0.mesh";
         IBinaryArchive binaryReader(filename, dumpBlock);
-#if BITPIT_ENABLE_MPI	
-        meshr->setCommunicator(MPI_COMM_WORLD);
-#endif
         meshr->restore(binaryReader.getStream());
         binaryReader.close();
     }

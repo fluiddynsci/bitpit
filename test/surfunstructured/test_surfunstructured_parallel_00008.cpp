@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -47,16 +47,13 @@ int subtest_001(int rank)
     //
 
     // Create the patch
-    SurfUnstructured mesh(2, 3);
+    SurfUnstructured mesh(2, 3, MPI_COMM_WORLD);
 
     // Build the adjacencies
     mesh.initializeAdjacencies();
 
     // Build the interfaces
     mesh.initializeInterfaces();
-
-    // Partition the patch
-    mesh.partition(MPI_COMM_WORLD, false);
 
     // Fill the patch
     if (rank == 0) {

@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -132,19 +132,19 @@ namespace bitpit {
         };
 
         //undistributed members
-        std::vector<uint64_t>	m_partitionFirstDesc; 			/**<Global array containing position of the first possible octant in each processor*/
-        std::vector<uint64_t>	m_partitionLastDesc; 			/**<Global array containing position of the last possible octant in each processor*/
-        std::vector<uint64_t>	m_partitionRangeGlobalIdx;	 	/**<Global array containing global index of the last existing octant in each processor*/
-        std::vector<uint64_t>	m_partitionRangeGlobalIdx0;	 	/**<Global array containing global index of the last existing octant in each processor before the last loadBalance (after an adapt is set equal to the actual.)*/
+        std::vector<uint64_t>	m_partitionFirstDesc; 			/**<Global array containing position of the first possible octant in each process*/
+        std::vector<uint64_t>	m_partitionLastDesc; 			/**<Global array containing position of the last possible octant in each process*/
+        std::vector<uint64_t>	m_partitionRangeGlobalIdx;	 	/**<Global array containing global index of the last existing octant in each process*/
+        std::vector<uint64_t>	m_partitionRangeGlobalIdx0;	 	/**<Global array containing global index of the last existing octant in each process before the last loadBalance (after an adapt is set equal to the actual.)*/
         uint64_t 				m_globalNumOctants;   			/**<Global number of octants in the parallel octree*/
         int 					m_nproc;						/**<Number of processes of the job*/
-        uint8_t 				m_maxDepth;						/**<Global max existing level in the parallel octree*/
+        int8_t 					m_maxDepth;						/**<Global max existing level in the parallel octree*/
         const TreeConstants	   *m_treeConstants;				/**<Tree constants*/
         std::size_t 			m_nofGhostLayers;				/**<Global number of ghost layers from the process boundary expressing the depth of the ghost halo*/
 
         //distributed members
         int 					m_rank;							/**<Local m_rank of process*/
-        LocalTree 				m_octree;						/**<Local tree in each processor*/
+        LocalTree 				m_octree;						/**<Local tree in each process*/
         std::map<int,u32vector> m_bordersPerProc;				/**<Local indices of border octants per process*/
         ptroctvector 			m_internals;					/**<Local pointers to internal octants*/
         ptroctvector 			m_pborders;						/**<Local pointers to border of process octants*/
@@ -160,7 +160,7 @@ namespace bitpit {
 
         //auxiliary members
         int 					m_errorFlag;					/**<MPI error flag*/
-        bool 					m_serial;						/**<True if the octree is the same on each processor, False if the octree is distributed*/
+        bool 					m_serial;						/**<True if the octree is the same on each process, False if the octree is distributed*/
         double					m_tol;							/**<Tolerance for geometric operations.*/
 
         //map members
@@ -413,8 +413,10 @@ namespace bitpit {
         // =================================================================================== //
     private:
         void		setDim(uint8_t dim);
-        void 		setFirstDescMorton();
-        void 		setLastDescMorton();
+#if BITPIT_ENABLE_MPI==1
+        void 		updateGlobalFirstDescMorton();
+        void 		updateGlobalLasttDescMorton();
+#endif
 
         // =================================================================================== //
         // OTHER METHODS												    			       //
@@ -443,7 +445,7 @@ namespace bitpit {
         // =================================================================================== //
 
         void        findAllGlobalNeighbours(uint32_t idx, std::vector<uint64_t> &globalNeighs);
-        void        findNeighbours(const Octant* oct, bool haveIidx, uint32_t idx, uint8_t iface, uint8_t codim, u32vector & neighbours, bvector & isghost, bool onlyinternals = false) const;
+        void        findNeighbours(const Octant* oct, uint8_t iface, uint8_t codim, u32vector & neighbours, bvector & isghost, bool onlyinternals) const;
     public:
         void 		findNeighbours(uint32_t idx, uint8_t iface, uint8_t codim, u32vector & neighbours, bvector & isghost) const;
         void 		findNeighbours(const Octant* oct, uint8_t iface, uint8_t codim, u32vector & neighbours, bvector & isghost) const ;
@@ -479,7 +481,7 @@ namespace bitpit {
         // =================================================================================== //
         // OTHER PARATREE BASED METHODS												    	   //
         // =================================================================================== //
-        uint8_t		getMaxDepth() const;
+        int8_t		getMaxDepth() const;
         int 		findOwner(uint64_t morton) const;
         int 		getOwnerRank(uint64_t globalIdx) const;
         void        settleMarkers();
@@ -750,16 +752,23 @@ namespace bitpit {
 
             // Compute information about the new partitioning
             assert(m_nproc > 0);
-            std::vector<uint64_t> newPartitionRangeGlobalidx(m_nproc);
-            newPartitionRangeGlobalidx[0] = partition[0] - 1;
-            for (int p = 1; p < m_nproc; ++p) {
-                newPartitionRangeGlobalidx[p] = newPartitionRangeGlobalidx[p - 1] + partition[p];
-            }
 
             uint32_t newSizeOctants = partition[m_rank];
 
-            uint64_t newLastOctantGlobalIdx  = newPartitionRangeGlobalidx[m_rank];
-            uint64_t newFirstOctantGlobalIdx = newLastOctantGlobalIdx - newSizeOctants + 1;
+            uint64_t newLastOctantGlobalIdx;
+            uint64_t newFirstOctantGlobalIdx;
+            if (newSizeOctants > 0) {
+                newLastOctantGlobalIdx = partition[0];
+                for (int p = 1; p < m_rank + 1; ++p) {
+                    newLastOctantGlobalIdx += partition[p];
+                }
+                --newLastOctantGlobalIdx;
+
+                newFirstOctantGlobalIdx = newLastOctantGlobalIdx - newSizeOctants + 1;
+            } else {
+                newLastOctantGlobalIdx  = 0;
+                newFirstOctantGlobalIdx = 1;
+            }
 
             // Partition internal octants
             if (m_serial) {
@@ -850,10 +859,15 @@ namespace bitpit {
                     }
                 }
 
-                bool hasResidentOctants = true;
-                if (newFirstOctantGlobalIdx > lastOctantGlobalIdx) {
-                    hasResidentOctants = false;
-                } else if (newLastOctantGlobalIdx < firstOctantGlobalIdx) {
+                bool hasResidentOctants;
+                if (newSizeOctants > 0) {
+                    hasResidentOctants = true;
+                    if (newFirstOctantGlobalIdx > lastOctantGlobalIdx) {
+                        hasResidentOctants = false;
+                    } else if (newLastOctantGlobalIdx < firstOctantGlobalIdx) {
+                        hasResidentOctants = false;
+                    }
+                } else {
                     hasResidentOctants = false;
                 }
 
@@ -907,7 +921,8 @@ namespace bitpit {
                     const std::array<uint32_t, 2> &recvRange = recvRanges.at(senderRank);
                     uint32_t beginRecvIdx = recvRange[0];
                     uint32_t endRecvIdx   = recvRange[1];
-                    assert((endRecvIdx - beginRecvIdx) == (recvBuffer.getSize() / Octant::getBinarySize()));
+                    assert(userData || ((endRecvIdx - beginRecvIdx) == (recvBuffer.getSize() / (Octant::getBinarySize()))));
+                    assert(!userData || !userData->fixedSize() || ((endRecvIdx - beginRecvIdx) == (recvBuffer.getSize() / (Octant::getBinarySize() + userData->fixedSize()))));
 
                     for (uint32_t i = beginRecvIdx; i < endRecvIdx; ++i) {
                         recvBuffer >> m_octree.m_octants[i];

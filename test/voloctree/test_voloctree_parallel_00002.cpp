@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -35,7 +35,7 @@ using namespace bitpit;
 * Subtest 001
 *
 * Testing coarsening of a 2D patch that merges octants from different
-* processors.
+* processes.
 */
 int subtest_001()
 {
@@ -46,8 +46,7 @@ int subtest_001()
 	log::cout() << "  >> 2D octree patch" << "\n";
 
 	// Create the patch
-	VolOctree *patch_2D_original = new VolOctree(2, origin, length, dh);
-	patch_2D_original->setCommunicator(MPI_COMM_WORLD);
+	VolOctree *patch_2D_original = new VolOctree(2, origin, length, dh, MPI_COMM_WORLD);
 	patch_2D_original->getVTK().setName("octree_parallel_uniform_patch_2D");
 	patch_2D_original->initializeAdjacencies();
 	patch_2D_original->initializeInterfaces();
@@ -105,7 +104,7 @@ int subtest_001()
 * Subtest 002
 *
 * Testing coarsening of a 3D patch that merges octants from different
-* processors.
+* processes.
 */
 int subtest_002()
 {
@@ -116,8 +115,7 @@ int subtest_002()
 	log::cout() << "  >> 3D octree mesh" << "\n";
 
 	// Create the patch
-	VolOctree *patch_3D_original = new VolOctree(3, origin, length, dh);
-	patch_3D_original->setCommunicator(MPI_COMM_WORLD);
+	VolOctree *patch_3D_original = new VolOctree(3, origin, length, dh, MPI_COMM_WORLD);
 	patch_3D_original->getVTK().setName("octree_parallel_uniform_patch_3D");
 	patch_3D_original->initializeAdjacencies();
 	patch_3D_original->initializeInterfaces();
@@ -188,7 +186,7 @@ int main(int argc, char *argv[])
 	log::cout().setVisibility(log::GLOBAL);
 
 	// Run the subtests
-    log::cout() << "Testing coarsening that merges octants from different processors" << std::endl;
+    log::cout() << "Testing coarsening that merges octants from different processes" << std::endl;
 
 	int status;
 	try {

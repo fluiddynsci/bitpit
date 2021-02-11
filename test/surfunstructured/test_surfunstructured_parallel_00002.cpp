@@ -7,7 +7,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -79,7 +79,7 @@ int subtest_001(
 
 // Local variables
 string                          in_name_bin = "./data/buddha.stl";
-SurfUnstructured                mesh(2, 3);
+SurfUnstructured                mesh(2, 3, MPI_COMM_WORLD);
 
 // Counters
 // none
@@ -93,9 +93,6 @@ SurfUnstructured                mesh(2, 3);
 
     // Set name ------- ----------------------------------------------------- //
     mesh.getVTK().setName("surfunstructured_partition");
-
-    // Set communicator ----------------------------------------------------- //
-    mesh.setCommunicator(MPI_COMM_WORLD);
 }
 
 // ========================================================================== //
@@ -229,7 +226,7 @@ int subtest_002(
 // ========================================================================== //
 
 // Local variables
-SurfUnstructured                mesh(2, 3);
+SurfUnstructured                mesh(2, 3, communicator);
 
 // Counters
 // none
@@ -288,18 +285,16 @@ SurfUnstructured                mesh(2, 3);
         }
     }
 
-    //  Build adjacencies ----------------------------------------------- //
-    mesh.buildAdjacencies();
+    //  Initialize adjacencies ---------------------------------------------- //
+    mesh.initializeAdjacencies();
 }
 
 // ========================================================================== //
 // STEP #2 (EXPORT THE MESH)                                                 //
 // ========================================================================== //
 {
-    if (rank == 0) {
-        log::cout() << "** Exporting mesh" << std::endl;
-        mesh.exportSTL("test_0002_subtest_002_before_partitioning.stl", false, true);
-    }
+    log::cout() << "** Exporting mesh" << std::endl;
+    mesh.exportSTL("test_0002_subtest_002_before_partitioning.stl", false, true);
 }
 
 // ========================================================================== //
@@ -324,7 +319,7 @@ SurfUnstructured                mesh(2, 3);
         }
     }
 
-    mesh.partition(communicator, cellRanks, false);
+    mesh.partition(cellRanks, false);
 
     // Write mesh ----------------------------------------------------------- //
     log::cout() << "** Writing mesh" << endl;

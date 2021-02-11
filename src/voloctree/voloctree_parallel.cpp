@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -31,6 +31,39 @@
 using namespace std;
 
 namespace bitpit {
+
+/*!
+	Initialize tree partitioning.
+
+	All octants are moved to the process identified by the rank zero in the
+	communicator.
+*/
+void VolOctree::initializeTreePartitioning()
+{
+	// Move all the octants to the first processor
+	//
+	// Assigning a null weight to every octant but the last octant and then
+	// doing a load balance will have the effect of moving all the octants
+	// to the first process.
+	std::size_t nOctants = m_tree->getNumOctants();
+	std::vector<double> octantWeights(nOctants, 0.);
+	if (nOctants > 0) {
+		octantWeights[nOctants - 1] = 1.;
+	}
+	m_tree->loadBalance(m_partitioningOctantWeights.get());
+}
+
+/*!
+	Initialize the size, expressed in number of layers, of the tree ghost
+	cells halo.
+
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+*/
+void VolOctree::initializeTreeHaloSize(std::size_t haloSize)
+{
+	m_tree->setNofGhostLayers(haloSize);
+}
 
 /*!
 	Sets the MPI communicator to be used for parallel communications.
@@ -84,7 +117,7 @@ std::size_t VolOctree::_getMaxHaloSize()
 */
 void VolOctree::_setHaloSize(std::size_t haloSize)
 {
-	m_tree->setNofGhostLayers(haloSize);
+	initializeTreeHaloSize(haloSize);
 }
 
 /*!
@@ -159,11 +192,18 @@ std::vector<adaption::Info> VolOctree::_partitioningPrepare(const std::unordered
 */
 std::vector<adaption::Info> VolOctree::_partitioningAlter(bool trackPartitioning)
 {
+	std::vector<adaption::Info> partitioningData;
+
+	// Early return if the dimension of the tree is null
+	if (m_tree->getDim() == 0) {
+		return partitioningData;
+	}
+
 	// Updating the tree
 	m_tree->loadBalance(m_partitioningOctantWeights.get());
 
 	// Sync the patch
-	std::vector<adaption::Info> partitioningData = sync(trackPartitioning);
+	partitioningData = sync(trackPartitioning);
 
 	// The bounding box is frozen, it is not updated automatically
 	setBoundingBox();
@@ -181,7 +221,7 @@ void VolOctree::_partitioningCleanup()
 }
 
 /*!
-	Finds the internal cells that will be ghost cells for the processors
+	Finds the internal cells that will be ghost cells for the processes
 	with the specified ranks. During data exchange, these cells will be
 	the sources form which data will be read from.
 

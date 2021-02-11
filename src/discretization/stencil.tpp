@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -248,9 +248,9 @@ void DiscreteStencil<weight_t>::resize(std::size_t size)
 /*!
 * Requests a change in capacity.
 *
-* Requests that the stencil capacity be at least nItems items.
+* Requests that the stencil capacity be at least the specified value.
 *
-* \param nItems is the minimum number of items that the stencil should
+* \param capacity is the minimum number of items that the stencil should
 * be able to contain
 */
 template<typename weight_t>

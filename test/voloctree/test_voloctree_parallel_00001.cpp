@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -48,8 +48,7 @@ int subtest_001(int rank)
 	log::cout() << "  >> 2D octree patch" << "\n";
 
 	// Create the patch
-	VolOctree *patch_2D = new VolOctree(2, origin, length, dh);
-	patch_2D->setCommunicator(MPI_COMM_WORLD);
+	VolOctree *patch_2D = new VolOctree(2, origin, length, dh, MPI_COMM_WORLD);
 	patch_2D->getVTK().setName("octree_parallel_uniform_patch_2D");
 	patch_2D->initializeAdjacencies();
 	patch_2D->initializeInterfaces();
@@ -58,7 +57,7 @@ int subtest_001(int rank)
 	// Partition the patch
 	patch_2D->partition(true);
 
-	// Refine one processor
+	// Refine the patch on one process
 	if(rank==0){
 		for(const auto& cell:patch_2D->getCells()){
 			patch_2D->markCellForRefinement(cell.getId());
@@ -115,8 +114,7 @@ int subtest_002(int rank)
 	log::cout() << "  >> 3D octree mesh" << "\n";
 
 	// Create the patch
-	VolOctree *patch_3D = new VolOctree(3, origin, length, dh);
-	patch_3D->setCommunicator(MPI_COMM_WORLD);
+	VolOctree *patch_3D = new VolOctree(3, origin, length, dh, MPI_COMM_WORLD);
 	patch_3D->getVTK().setName("octree_parallel_uniform_patch_3D");
 	patch_3D->initializeAdjacencies();
 	patch_3D->initializeInterfaces();
@@ -125,7 +123,7 @@ int subtest_002(int rank)
 	// Partition the patch
 	patch_3D->partition(true);
 
-	// Refine one processor
+	// Refine the patch on one process
 	if(rank==0){
 		for(const auto& cell:patch_3D->getCells()){
 			patch_3D->markCellForRefinement(cell.getId());

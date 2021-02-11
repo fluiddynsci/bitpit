@@ -3,7 +3,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -48,7 +48,7 @@ int subtest_001(int rank)
     bitpit::log::cout() << "Testing creating a levelset from an existing tree" << std::endl;
 
     // Input geometry
-    std::unique_ptr<bitpit::SurfUnstructured> STL( new bitpit::SurfUnstructured(2, dimensions) );
+    std::unique_ptr<bitpit::SurfUnstructured> STL( new bitpit::SurfUnstructured(2, dimensions, MPI_COMM_NULL) );
 
     bitpit::log::cout() << " - Loading stl geometry" << std::endl;
 
@@ -81,7 +81,7 @@ int subtest_001(int rank)
         h = std::max(h, meshMax[i] - meshMin[i]);
     }
 
-    std::unique_ptr<bitpit::PabloUniform> octree = std::unique_ptr<bitpit::PabloUniform>(new bitpit::PabloUniform(meshMin[0], meshMin[1], meshMin[2], h, dimensions));
+    std::unique_ptr<bitpit::PabloUniform> octree = std::unique_ptr<bitpit::PabloUniform>(new bitpit::PabloUniform(meshMin[0], meshMin[1], meshMin[2], h, dimensions, bitpit::PabloUniform::DEFAULT_LOG_FILE, MPI_COMM_WORLD));
     octree->adaptGlobalRefine();
     octree->adaptGlobalRefine();
     octree->adaptGlobalRefine();
@@ -96,6 +96,9 @@ int subtest_001(int rank)
     mesh.initializeAdjacencies();
     mesh.initializeInterfaces();
     mesh.update();
+
+    // Mesh Partitioning
+    mesh.partition(false);
 
     // Compute level set in narrow band
     std::chrono::time_point<std::chrono::system_clock>    start, end;

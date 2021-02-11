@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -48,32 +48,85 @@ namespace bitpit {
 	PatchKernel is the base class for defining patches.
 */
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	Patches that are filled automatically (e.g. VolOctree) will initialize
+	the cells only on the process identified by the rank zero in the
+	communicator.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+	\param expert if true, the expert mode will be enabled
+*/
+PatchKernel::PatchKernel(MPI_Comm communicator, std::size_t haloSize, bool expert)
+#else
+/*!
+	Creates a patch.
 
 	\param expert if true, the expert mode will be enabled
 */
 PatchKernel::PatchKernel(bool expert)
+#endif
 	: m_expert(expert)
 {
 	// Initialize the patch
+#if BITPIT_ENABLE_MPI==1
+	initialize(communicator, haloSize);
+#else
 	initialize();
+#endif
 
 	// Register the patch
 	patch::manager().registerPatch(this);
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	Patches that are filled automatically (e.g. VolOctree) will initialize
+	the cells only on the process identified by the rank zero in the
+	communicator.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param dimension is the dimension of the patch
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+	\param expert if true, the expert mode will be enabled
+*/
+PatchKernel::PatchKernel(int dimension, MPI_Comm communicator, std::size_t haloSize, bool expert)
+#else
+/*!
+	Creates a patch.
 
 	\param dimension is the dimension of the patch
 	\param expert if true, the expert mode will be enabled
 */
 PatchKernel::PatchKernel(int dimension, bool expert)
+#endif
 	: m_expert(expert)
 {
 	// Initialize the patch
+#if BITPIT_ENABLE_MPI==1
+	initialize(communicator, haloSize);
+#else
 	initialize();
+#endif
 
 	// Register the patch
 	patch::manager().registerPatch(this);
@@ -82,18 +135,46 @@ PatchKernel::PatchKernel(int dimension, bool expert)
 	setDimension(dimension);
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	Patches that are filled automatically (e.g. VolOctree) will initialize
+	the cells only on the process identified by the rank zero in the
+	communicator.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param id is the id that will be assigned to the patch
+	\param dimension is the dimension of the patch
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+	\param expert if true, the expert mode will be enabled
+*/
+PatchKernel::PatchKernel(int id, int dimension, MPI_Comm communicator, std::size_t haloSize, bool expert)
+#else
+/*!
+	Creates a patch.
 
 	\param id is the id that will be assigned to the patch
 	\param dimension is the dimension of the patch
 	\param expert if true, the expert mode will be enabled
 */
 PatchKernel::PatchKernel(int id, int dimension, bool expert)
+#endif
 	: m_expert(expert)
 {
 	// Initialize the patch
+#if BITPIT_ENABLE_MPI==1
+	initialize(communicator, haloSize);
+#else
 	initialize();
+#endif
 
 	// Register the patch
 	patch::manager().registerPatch(this, id);
@@ -106,7 +187,7 @@ PatchKernel::PatchKernel(int id, int dimension, bool expert)
 }
 
 /*!
-	Copy constructor
+	Copy constructor.
 
 	\param other is another patch whose content is copied into this
 */
@@ -157,7 +238,6 @@ PatchKernel::PatchKernel(const PatchKernel &other)
       m_nProcessors(other.m_nProcessors)
 #if BITPIT_ENABLE_MPI==1
       , m_communicator(MPI_COMM_NULL),
-      m_partitioned(other.m_partitioned),
       m_partitioningStatus(other.m_partitioningStatus),
       m_owner(other.m_owner),
       m_haloSize(other.m_haloSize),
@@ -225,7 +305,7 @@ PatchKernel::PatchKernel(const PatchKernel &other)
 	// Set the communicator
 	MPI_Comm communicator = other.getCommunicator();
 	if (communicator != MPI_COMM_NULL) {
-		setCommunicator(communicator);
+		initializeCommunicator(communicator);
 	}
 #endif
 }
@@ -233,7 +313,17 @@ PatchKernel::PatchKernel(const PatchKernel &other)
 /*!
 	Initialize the patch
 */
+#if BITPIT_ENABLE_MPI==1
+/*!
+	\param communicator is the communicator to be used for exchanging data
+	among the processes
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+*/
+void PatchKernel::initialize(MPI_Comm communicator, std::size_t haloSize)
+#else
 void PatchKernel::initialize()
+#endif
 {
 	// Id
 	m_id = PatchManager::AUTOMATIC_ID;
@@ -281,31 +371,32 @@ void PatchKernel::initialize()
 	// initialization.
 	setAdaptionStatus(ADAPTION_UNSUPPORTED);
 
-	// Parallel information
-	m_rank        = 0;
-	m_nProcessors = 1;
 #if BITPIT_ENABLE_MPI==1
+	// Initialize communicator
+	initializeCommunicator(communicator);
 
-	// Patch is not partitioned
-	m_communicator = MPI_COMM_NULL;
-	m_haloSize = 0;
-	setPartitioned(false);
+	// Set halo size
+	initializeHaloSize(haloSize);
 
-	// Set the partitioning as unsupported
-	//
-	// Specific implementation will set the appropriate status during their
-	// initialization.
-	setPartitioningStatus(PARTITIONING_UNSUPPORTED);
-
-	// Update patch owner
-	updateOwner();
-
-	// Mark partitioning information as up-to-date
-	setPartitioningInfoDirty(false);
+	// Mark patch as partioned
+	if (isPartitioned()) {
+		setPartitioningStatus(PARTITIONING_CLEAN);
+	} else {
+		setPartitioningStatus(PARTITIONING_UNSUPPORTED);
+	}
 
 	// Initialize partitioning tags
 	m_partitioningCellsTag    = -1;
 	m_partitioningVerticesTag = -1;
+
+	// Update partitioning information
+	if (isPartitioned()) {
+		updatePartitioningInfo(true);
+	}
+#else
+	// Dummy parallel information
+	m_rank        = 0;
+	m_nProcessors = 1;
 #endif
 
 	// Initialize the geometrical tolerance
@@ -434,7 +525,7 @@ std::vector<adaption::Info> PatchKernel::spawn(bool trackSpawn)
 
 #if BITPIT_ENABLE_MPI==1
 	// This is a collevtive operation and should be called by all processes
-	if (isCommunicatorSet()) {
+	if (isPartitioned()) {
 		const auto &communicator = getCommunicator();
 		MPI_Barrier(communicator);
 	}
@@ -525,10 +616,10 @@ std::vector<adaption::Info> PatchKernel::adaptionPrepare(bool trackAdaption)
 }
 
 /*!
-	Alter the patch performing the adpation.
+	Alter the patch performing the adaption.
 
 	The actual modification of the patch takes place during this phase. After
-	this phase the adapton is completed and the patch is in its final state.
+	this phase the adaption is completed and the patch is in its final state.
 	Optionally the patch can track the changes performed to the patch.
 
 	\param trackAdaption if set to true the function will return the changes
@@ -637,14 +728,7 @@ void PatchKernel::finalizeAlterations(bool squeezeStorage)
 
 #if BITPIT_ENABLE_MPI==1
 	// Update partitioning information
-	//
-	// If we are partitioning the patch, the partition flag is not set yet (it
-	// will be set after the call to this function).
-	bool partitioningInfoDirty = (getPartitioningStatus() == PARTITIONING_PREPARED);
-	if (!partitioningInfoDirty) {
-		partitioningInfoDirty = arePartitioningInfoDirty();
-	}
-
+	bool partitioningInfoDirty = arePartitioningInfoDirty();
 	if (partitioningInfoDirty) {
 		updatePartitioningInfo(true);
 	}
@@ -706,7 +790,7 @@ void PatchKernel::resetCellAdaptionMarker(long id)
 	Returns the adaption marker of the specified cell.
 
 	The marker only defines the type of adaption requested for the cell, it
-	is not guaranteed that the adaption will effectively perfrom the requestd
+	is not guaranteed that the adaption will effectively perform the requested
 	action (i.e., the requested marker may not be consistent with the internal
 	criteria defined by the patch).
 
@@ -734,7 +818,7 @@ void PatchKernel::enableCellBalancing(long id, bool enabled)
 }
 
 /*!
-	Resest the patch.
+	Reset the patch.
 */
 void PatchKernel::reset()
 {
@@ -744,12 +828,11 @@ void PatchKernel::reset()
 }
 
 /*!
-	Resest the vertices of the patch.
+	Reset the vertices of the patch.
 */
 void PatchKernel::resetVertices()
 {
 	m_vertices.clear();
-	PiercedVector<Vertex>().swap(m_vertices);
 	m_vertexIdGenerator.reset();
 	m_nInternalVertices = 0;
 #if BITPIT_ENABLE_MPI==1
@@ -766,12 +849,11 @@ void PatchKernel::resetVertices()
 }
 
 /*!
-	Resest the cells of the patch.
+	Reset the cells of the patch.
 */
 void PatchKernel::resetCells()
 {
 	m_cells.clear();
-	PiercedVector<Cell>().swap(m_cells);
 	m_cellIdGenerator.reset();
 	m_nInternalCells = 0;
 #if BITPIT_ENABLE_MPI==1
@@ -798,7 +880,7 @@ void PatchKernel::resetCells()
 }
 
 /*!
-	Resest the interfaces of the patch.
+	Reset the interfaces of the patch.
 
 	This function doesn't change the build strategy, it only deletes the
 	existing interface.
@@ -824,7 +906,7 @@ void PatchKernel::resetInterfaces()
 }
 
 /*!
-	Internal funtion to reset the interfaces of the patch.
+	Internal function to reset the interfaces of the patch.
 
 	This function doesn't change the alteration flags.
 */
@@ -835,7 +917,6 @@ void PatchKernel::_resetInterfaces()
 	}
 
 	m_interfaces.clear();
-	PiercedVector<Interface>().swap(m_interfaces);
 	m_interfaceIdGenerator.reset();
 }
 
@@ -915,7 +996,7 @@ bool PatchKernel::reserveInterfaces(size_t nInterfaces)
 	Writes the patch to filename specified in input.
 
 	\param filename the filename where the patch will be written to
-    \param mode is the VTK file mode that will be used for writing the patch
+	\param mode is the VTK file mode that will be used for writing the patch
 */
 void PatchKernel::write(const std::string &filename, VTKWriteMode mode)
 {
@@ -927,9 +1008,9 @@ void PatchKernel::write(const std::string &filename, VTKWriteMode mode)
 }
 
 /*!
-	Writes the patch a filename with the same name of the patch
+	Writes the patch a filename with the same name of the patch.
 
-    \param mode is the VTK file mode that will be used for writing the patch
+	\param mode is the VTK file mode that will be used for writing the patch
 */
 void PatchKernel::write(VTKWriteMode mode)
 {
@@ -1001,7 +1082,7 @@ void PatchKernel::write(VTKWriteMode mode)
 PatchKernel::SpawnStatus PatchKernel::getSpawnStatus() const
 {
 	// There is no need to check the spawn status globally because the spawn
-	// status will always be the same on all the processors
+	// status will always be the same on all the processes.
 
 	return m_spawnStatus;
 }
@@ -1039,7 +1120,7 @@ PatchKernel::AdaptionStatus PatchKernel::getAdaptionStatus(bool global) const
 	int adaptionStatus = static_cast<int>(m_adaptionStatus);
 
 #if BITPIT_ENABLE_MPI==1
-	if (global && isCommunicatorSet()) {
+	if (global && isPartitioned()) {
 		const auto &communicator = getCommunicator();
 		MPI_Allreduce(MPI_IN_PLACE, &adaptionStatus, 1, MPI_INT, MPI_MAX, communicator);
 	}
@@ -1061,12 +1142,12 @@ void PatchKernel::setAdaptionStatus(AdaptionStatus status)
 }
 
 /*!
-	Returns true if the the patch needs to update its data strucutres.
+	Returns true if the the patch needs to update its data structures.
 
 	\param global if set to true, the dirty status will be evaluated globally
 	across all the partitions
 	\return This method returns true to indicate the patch needs to update
-	its data strucutres. Otherwise, it returns false.
+	its data structures. Otherwise, it returns false.
 */
 bool PatchKernel::isDirty(bool global) const
 {
@@ -1121,7 +1202,7 @@ bool PatchKernel::isDirty(bool global) const
 
 #if BITPIT_ENABLE_MPI==1
 	// Get the global flag
-	if (global && isCommunicatorSet()) {
+	if (global && isPartitioned()) {
 		const auto &communicator = getCommunicator();
 		MPI_Allreduce(MPI_IN_PLACE, &isDirty, 1, MPI_C_BOOL, MPI_LOR, communicator);
 	}
@@ -1133,9 +1214,9 @@ bool PatchKernel::isDirty(bool global) const
 /*!
 	Enables or disables expert mode.
 
-	When expert mode is enabled, it will be possible to change the
-	patch using low level functions (e.g., it will be possible to
-	add individual cells, add vertices, delete cells, ...).
+	When expert mode is enabled, it will be possible to change the patch using
+	low level functions (e.g., it will be possible to add individual cells,
+	add vertices, delete cells, ...).
 
 	\param expert if true, the expert mode will be enabled
 */
@@ -1151,9 +1232,9 @@ void PatchKernel::setExpert(bool expert)
 /*!
 	Checks if the expert mode is enabled.
 
-	When expert mode is enabled, it will be possible to change the
-	patch using low level functions (e.g., it will be possible to
-	add individual cells, add vertices, delete cells, ...).
+	When expert mode is enabled, it will be possible to change the patch using
+	low level functions (e.g., it will be possible to add individual cells,
+	add vertices, delete cells, ...).
 
 	\return This method returns true when the expert is enabled,
 	otherwise it returns false.
@@ -1164,9 +1245,9 @@ bool PatchKernel::isExpert() const
 }
 
 /*!
-	Sets the ID of the patch.
+	Sets the id of the patch.
 
-	\param id the ID of the patch
+	\param id the id of the patch
 */
 void PatchKernel::setId(int id)
 {
@@ -1174,9 +1255,9 @@ void PatchKernel::setId(int id)
 }
 
 /*!
-	Gets the ID of the patch.
+	Gets the id associated with the patch.
 
-	\return The ID of the patch
+	\return The id associated with the patch.
 */
 int PatchKernel::getId() const
 {
@@ -1206,7 +1287,7 @@ void PatchKernel::setDimension(int dimension)
 /*!
 	Gets the dimension of the patch.
 
-	\return The dimension of the patch
+	\return The dimension of the patch.
 */
 int PatchKernel::getDimension() const
 {
@@ -1216,8 +1297,7 @@ int PatchKernel::getDimension() const
 /*!
 	Returns true if the patch is a three-dimensional patch.
 
-	\return This method returns true to indicate the patch is
-	three-dimensional
+	\return This method returns true to indicate the patch is three-dimensional.
 */
 bool PatchKernel::isThreeDimensional() const
 {
@@ -1363,8 +1443,14 @@ PatchKernel::VertexConstIterator PatchKernel::vertexConstEnd() const
 /*!
 	Adds the specified vertex to the patch.
 
-	All new vertices will be temporarly added as internal vertices, is needed
+	All new vertices will be temporarily added as internal vertices, is needed
 	they will be converted to ghost vertices when updating ghost information.
+
+	If valid, the specified id will we assigned to the newly created vertex,
+	otherwise a new unique id will be generated for the vertex. However, it
+	is not possible to create a new vertex with an id already assigned to an
+	existing vertex of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
 
 	\param source is the vertex that will be added
 	\param id is the id that will be assigned to the newly created vertex.
@@ -1383,8 +1469,14 @@ PatchKernel::VertexIterator PatchKernel::addVertex(const Vertex &source, long id
 /*!
 	Adds the specified vertex to the patch.
 
-	All new vertices will be temporarly added as internal vertices, is needed
+	All new vertices will be temporarily added as internal vertices, is needed
 	they will be converted to ghost vertices when updating ghost information.
+
+	If valid, the specified id will we assigned to the newly created vertex,
+	otherwise a new unique id will be generated for the vertex. However, it
+	is not possible to create a new vertex with an id already assigned to an
+	existing vertex of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
 
 	\param source is the vertex that will be added
 	\param id is the id that will be assigned to the newly created vertex.
@@ -1411,8 +1503,14 @@ PatchKernel::VertexIterator PatchKernel::addVertex(Vertex &&source, long id)
 /*!
 	Adds a new vertex with the specified coordinates.
 
-	All new vertices will be temporarly added as internal vertices, is needed
+	All new vertices will be temporarily added as internal vertices, is needed
 	they will be converted to ghost vertices when updating ghost information.
+
+	If valid, the specified id will we assigned to the newly created vertex,
+	otherwise a new unique id will be generated for the vertex. However, it
+	is not possible to create a new vertex with an id already assigned to an
+	existing vertex of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
 
 	\param coords are the coordinates of the vertex
 	\param id is the id that will be assigned to the newly created vertex.
@@ -1440,6 +1538,11 @@ PatchKernel::VertexIterator PatchKernel::addVertex(const std::array<double, 3> &
 
 /*!
 	Internal function to add an internal vertex.
+
+	It is not possible to create a new vertex with an id already assigned to an
+	existing vertex of the patch or with an invalid id. If this happens, an
+	exception is thrown. Ids are considered valid if they are greater or equal
+	than zero.
 
 	\param coords are the coordinates of the vertex
 	\param id is the id that will be assigned to the newly created vertex.
@@ -1491,7 +1594,7 @@ PatchKernel::VertexIterator PatchKernel::_addInternalVertex(const std::array<dou
 
 #if BITPIT_ENABLE_MPI==0
 /*!
-	Resore the vertex with the specified id.
+	Restore the vertex with the specified id.
 
 	The kernel should already contain the vertex, only the contents of the
 	vertex will be updated.
@@ -1906,9 +2009,9 @@ void PatchKernel::getVertexCoords(std::size_t nVertices, const long *ids, std::a
 }
 
 /*!
-	Return true if the patch is emtpy.
+	Return true if the patch is empty.
 
-	\return Return true if the patch is emtpy.
+	\return Return true if the patch is empty.
 */
 bool PatchKernel::empty() const
 {
@@ -1949,7 +2052,7 @@ void PatchKernel::updateLastInternalVertexId()
 /*!
 	Gets the number of cells in the patch.
 
-	\return The number of cells in the patch
+	\return The number of cells in the patch.
 */
 long PatchKernel::getCellCount() const
 {
@@ -1959,7 +2062,7 @@ long PatchKernel::getCellCount() const
 /*!
 	Gets the number of internal cells in the patch.
 
-	\return The number of internal cells in the patch
+	\return The number of internal cells in the patch.
 */
 long PatchKernel::getInternalCellCount() const
 {
@@ -1969,7 +2072,7 @@ long PatchKernel::getInternalCellCount() const
 /*!
 	Gets the number of internal cells in the patch.
 
-	\return The number of internal cells in the patch
+	\return The number of internal cells in the patch.
 */
 long PatchKernel::getInternalCount() const
 {
@@ -2174,7 +2277,8 @@ PatchKernel::CellConstIterator PatchKernel::internalConstBegin() const
 }
 
 /*!
-	Returns a constant iterator pointing to the end of the list of internal cells.
+	Returns a constant iterator pointing to the end of the list of internal
+	cells.
 
 	\result A constant iterator to the end of the list of internal cells.
 */
@@ -2188,7 +2292,8 @@ PatchKernel::CellConstIterator PatchKernel::internalCellConstEnd() const
 }
 
 /*!
-	Returns a constant iterator pointing to the end of the list of internal cells.
+	Returns a constant iterator pointing to the end of the list of internal
+	cells.
 
 	\result A constant iterator to the end of the list of internal cells.
 */
@@ -2199,6 +2304,12 @@ PatchKernel::CellConstIterator PatchKernel::internalConstEnd() const
 
 /*!
 	Adds the specified cell to the patch.
+
+	If valid, the specified id will we assigned to the newly created cell,
+	otherwise a new unique id will be generated for the cell. However, it
+	is not possible to create a new cell with an id already assigned to an
+	existing cell of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
 
 	\param source is the cell that will be added
 	\param id is the id that will be assigned to the newly created cell.
@@ -2216,6 +2327,12 @@ PatchKernel::CellIterator PatchKernel::addCell(const Cell &source, long id)
 
 /*!
 	Adds the specified cell to the patch.
+
+	If valid, the specified id will we assigned to the newly created cell,
+	otherwise a new unique id will be generated for the cell. However, it
+	is not possible to create a new cell with an id already assigned to an
+	existing cell of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
 
 	\param source is the cell that will be added
 	\param id is the id that will be assigned to the newly created cell.
@@ -2247,6 +2364,12 @@ PatchKernel::CellIterator PatchKernel::addCell(Cell &&source, long id)
 /*!
 	Adds a new cell with the specified id and type.
 
+	If valid, the specified id will we assigned to the newly created cell,
+	otherwise a new unique id will be generated for the cell. However, it
+	is not possible to create a new cell with an id already assigned to an
+	existing cell of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
+
 	\param type is the type of the cell
 	\param id is the id that will be assigned to the newly created cell.
 	If a negative id value is specified, a new unique id will be generated
@@ -2269,6 +2392,12 @@ PatchKernel::CellIterator PatchKernel::addCell(ElementType type, long id)
 /*!
 	Adds a new cell with the specified id, type, and connectivity.
 
+	If valid, the specified id will we assigned to the newly created cell,
+	otherwise a new unique id will be generated for the cell. However, it
+	is not possible to create a new cell with an id already assigned to an
+	existing cell of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
+
 	\param type is the type of the cell
 	\param connectivity is the connectivity of the cell
 	\param id is the id that will be assigned to the newly created cell.
@@ -2288,6 +2417,12 @@ PatchKernel::CellIterator PatchKernel::addCell(ElementType type, const std::vect
 
 /*!
 	Adds a new cell with the specified id, type, and connectivity.
+
+	If valid, the specified id will we assigned to the newly created cell,
+	otherwise a new unique id will be generated for the cell. However, it
+	is not possible to create a new cell with an id already assigned to an
+	existing cell of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
 
 	\param type is the type of the cell
 	\param connectStorage is the storage the contains or will contain
@@ -2321,6 +2456,11 @@ PatchKernel::CellIterator PatchKernel::addCell(ElementType type, std::unique_ptr
 
 /*!
 	Internal function to add an internal cell.
+
+	It is not possible to create a new cell with an id already assigned to an
+	existing cell of the patch or with an invalid id. If this happens, an
+	exception is thrown. Ids are considered valid if they are greater or equal
+	than zero.
 
 	\param type is the type of the cell
 	\param connectStorage is the storage the contains or will contain
@@ -2388,7 +2528,7 @@ void PatchKernel::setAddedCellAlterationFlags(long id)
 
 #if BITPIT_ENABLE_MPI==0
 /*!
-	Resore the cell with the specified id.
+	Restore the cell with the specified id.
 
 	The kernel should already contain the cell, only the contents of the
 	cell will be updated.
@@ -3562,6 +3702,12 @@ PatchKernel::InterfaceConstIterator PatchKernel::interfaceConstEnd() const
 /*!
 	Adds the specified interface to the patch.
 
+	If valid, the specified id will we assigned to the newly created interface,
+	otherwise a new unique id will be generated for the interface. However, it
+	is not possible to create a new interface with an id already assigned to an
+	existing interface of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
+
 	\param source is the interface that will be added
 	\param id is the id that will be assigned to the newly created interface.
 	If a negative id value is specified, a new unique id will be generated
@@ -3578,6 +3724,12 @@ PatchKernel::InterfaceIterator PatchKernel::addInterface(const Interface &source
 
 /*!
 	Adds the specified interface to the patch.
+
+	If valid, the specified id will we assigned to the newly created interface,
+	otherwise a new unique id will be generated for the interface. However, it
+	is not possible to create a new interface with an id already assigned to an
+	existing interface of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
 
 	\param source is the interface that will be added
 	\param id is the id that will be assigned to the newly created interface.
@@ -3607,6 +3759,12 @@ PatchKernel::InterfaceIterator PatchKernel::addInterface(Interface &&source, lon
 /*!
 	Adds a new interface with the specified id.
 
+	If valid, the specified id will we assigned to the newly created interface,
+	otherwise a new unique id will be generated for the interface. However, it
+	is not possible to create a new interface with an id already assigned to an
+	existing interface of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
+
 	\param type is the type of the interface
 	\param id is the id that will be assigned to the newly created interface.
 	If a negative id value is specified, a new unique id will be generated
@@ -3623,6 +3781,12 @@ PatchKernel::InterfaceIterator PatchKernel::addInterface(ElementType type, long 
 
 /*!
 	Adds a new interface with the specified id.
+
+	If valid, the specified id will we assigned to the newly created interface,
+	otherwise a new unique id will be generated for the interface. However, it
+	is not possible to create a new interface with an id already assigned to an
+	existing interface of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
 
 	\param type is the type of the interface
 	\param connectivity is the connectivity of the interface
@@ -3643,6 +3807,12 @@ PatchKernel::InterfaceIterator PatchKernel::addInterface(ElementType type,
 
 /*!
 	Adds a new interface with the specified id.
+
+	If valid, the specified id will we assigned to the newly created interface,
+	otherwise a new unique id will be generated for the interface. However, it
+	is not possible to create a new interface with an id already assigned to an
+	existing interface of the patch. If this happens, an exception is thrown.
+	Ids are considered valid if they are greater or equal than zero.
 
 	\param type is the type of the interface
 	\param connectStorage is the storage the contains or will contain
@@ -4297,7 +4467,7 @@ std::vector<adaption::Info> PatchKernel::_adaptionPrepare(bool trackAdaption)
 }
 
 /*!
-	Alter the patch performing the adpation.
+	Alter the patch performing the adaption.
 
 	Default implementation is a no-op function.
 
@@ -4392,7 +4562,7 @@ adaption::Marker PatchKernel::_getCellAdaptionMarker(long id)
 
 	\param id is the id of the cell
 	\param enabled defines if enable the balancing for the specified cell
-	\result Returns true if the falg was properly set, false otherwise.
+	\result Returns true if the flag was properly set, false otherwise.
 */
 bool PatchKernel::_enableCellBalancing(long id, bool enabled)
 {
@@ -4840,6 +5010,8 @@ void PatchKernel::setAdjacenciesBuildStrategy(AdjacenciesBuildStrategy status)
 /*!
 	Checks if the adjacencies are dirty.
 
+	\param global if set to true, the dirty status will be evaluated globally
+	across all the partitions
 	\result Returns true if the adjacencies are dirty, false otherwise.
 */
 bool PatchKernel::areAdjacenciesDirty(bool global) const
@@ -4858,7 +5030,7 @@ bool PatchKernel::areAdjacenciesDirty(bool global) const
 	}
 
 #if BITPIT_ENABLE_MPI==1
-	if (global && isCommunicatorSet()) {
+	if (global && isPartitioned()) {
 		const auto &communicator = getCommunicator();
 		MPI_Allreduce(MPI_IN_PLACE, &areDirty, 1, MPI_C_BOOL, MPI_LOR, communicator);
 	}
@@ -5202,6 +5374,8 @@ void PatchKernel::setInterfacesBuildStrategy(InterfacesBuildStrategy status)
 /*!
 	Checks if the interfaces are dirty.
 
+	\param global if set to true, the dirty status will be evaluated globally
+	across all the partitions
 	\result Returns true if the interfaces are dirty, false otherwise.
 */
 bool PatchKernel::areInterfacesDirty(bool global) const
@@ -5222,7 +5396,7 @@ bool PatchKernel::areInterfacesDirty(bool global) const
 	}
 
 #if BITPIT_ENABLE_MPI==1
-	if (global && isCommunicatorSet()) {
+	if (global && isPartitioned()) {
 		const auto &communicator = getCommunicator();
 		MPI_Allreduce(MPI_IN_PLACE, &areDirty, 1, MPI_C_BOOL, MPI_LOR, communicator);
 	}
@@ -5249,6 +5423,9 @@ void PatchKernel::buildInterfaces()
 
 	If the current strategy doesn't match the requested strategy, all
 	interfaces will be deleted and they will be re-generated from scratch.
+
+	Adjacencies are a mandatory requirement for building interfaces, if the
+	adjacencies are not yet initialized an exception is thrown.
 
 	\param strategy is the build strategy that will be used
 */
@@ -5502,7 +5679,7 @@ PatchKernel::InterfaceIterator PatchKernel::buildCellInterface(Cell *cell_1, int
 	// by the cell that owns the smallest of the two faces. If the faces
 	// of both cells have the same size, the interface is owned by the cell
 	// with the "lower fuzzy positioning". It is not necessary to have a
-	// precise comparison, it's only necassary to define a repetible order
+	// precise comparison, it's only necessary to define a repeatable order
 	// between the two cells. It is therefore possible to use the "fuzzy"
 	// cell comparison.
 	bool cellOwnsInterface = true;
@@ -6060,7 +6237,7 @@ bool PatchKernel::isBoundingBoxDirty(bool global) const
 {
 	bool isDirty = m_boxDirty;
 #if BITPIT_ENABLE_MPI==1
-	if (global && isCommunicatorSet()) {
+	if (global && isPartitioned()) {
 		const auto &communicator = getCommunicator();
 		MPI_Allreduce(const_cast<bool *>(&m_boxDirty), &isDirty, 1, MPI_C_BOOL, MPI_LOR, communicator);
 	}
@@ -6238,7 +6415,6 @@ void PatchKernel::getElementVertexCoordinates(const Element &element, std::array
 /*!
     Group vertices on regular bins.
 
-    \param[in] vertices are the vertices to be sorted
     \param[in] nBins is the number of bins (on each space direction)
     \result Returns the vertices grouped into bins.
 */
@@ -6420,9 +6596,9 @@ void PatchKernel::_setTol(double tolerance)
 }
 
 /*!
-	Gets the tolerance for the geometrical checks.
+	Gets the tolerance for geometrical checks.
 
-	\result The tolerance fot the geometrical checks.
+	\result The tolerance for geometrical checks.
 */
 double PatchKernel::getTol() const
 {
@@ -6430,7 +6606,7 @@ double PatchKernel::getTol() const
 }
 
 /*!
-	Resets the tolerance for the geometrical checks.
+	Resets the tolerance for geometrical checks.
 */
 void PatchKernel::resetTol()
 {
@@ -6661,9 +6837,9 @@ const PatchKernel::CellConstRange PatchKernel::getVTKCellWriteRange() const
  *  @param[in] stream is the stream to write to
  *  @param[in] name is the name of the data to be written. Either user
  *  data or patch data
- *  @param[in] format is the format which must be used. Supported options
- *  are "ascii" or "appended". For "appended" type an unformatted binary
- *  stream must be used
+ *  @param[in] format is the format that will be used for writing data. Only
+ *  the "appended" format is supported. The "appended" format requires an
+ *  unformatted binary stream
  */
 void PatchKernel::flushData(std::fstream &stream, const std::string &name, VTKFormat format)
 {
@@ -6820,7 +6996,7 @@ void PatchKernel::flushData(std::fstream &stream, const std::string &name, VTKFo
 }
 
 /*!
- *  Renumbers vertices ID consecutively, starting from a given offset.
+ *  Renumbers vertices consecutively, starting from a given offset.
  *
  *  \param[in] offset is the starting id
  */
@@ -6935,7 +7111,7 @@ void PatchKernel::consecutiveRenumber(long vertexOffset, long cellOffset, long i
  */
 int PatchKernel::getDumpVersion() const
 {
-	const int KERNEL_DUMP_VERSION = 10;
+	const int KERNEL_DUMP_VERSION = 11;
 
 	return (KERNEL_DUMP_VERSION + _getDumpVersion());
 }
@@ -6947,7 +7123,7 @@ int PatchKernel::getDumpVersion() const
  *  not up-to-date, it will be automatically updated before dump it.
  *
  *  \param stream is the stream to write to
- *  \result Return true if the patch was sucessfully dumped, false otherwise.
+ *  \result Return true if the patch was successfully dumped, false otherwise.
  */
 bool PatchKernel::dump(std::ostream &stream)
 {
@@ -6968,7 +7144,7 @@ bool PatchKernel::dump(std::ostream &stream)
  *  is a no-op.
  *
  *  \param stream is the stream to write to
- *  \result Return true if the patch was sucessfully dumped, false otherwise.
+ *  \result Return true if the patch was successfully dumped, false otherwise.
  */
 bool PatchKernel::dump(std::ostream &stream) const
 {
@@ -6987,10 +7163,8 @@ bool PatchKernel::dump(std::ostream &stream) const
 	utils::binary::write(stream, m_dimension);
 	utils::binary::write(stream, m_vtk.getName());
 #if BITPIT_ENABLE_MPI==1
-	utils::binary::write(stream, isPartitioned());
 	utils::binary::write(stream, m_haloSize);
 #else
-	utils::binary::write(stream, false);
 	utils::binary::write(stream, 0);
 #endif
 
@@ -7030,7 +7204,7 @@ bool PatchKernel::dump(std::ostream &stream) const
 	m_cellIdGenerator.dump(stream);
 	m_interfaceIdGenerator.dump(stream);
 
-	// The patch has been dumped sucessfully
+	// The patch has been dumped successfully
 	return true;
 }
 
@@ -7070,13 +7244,6 @@ void PatchKernel::restore(std::istream &stream, bool reregister)
 	std::string name;
 	utils::binary::read(stream, name);
 	m_vtk.setName(name);
-
-	// Partioned flag
-	bool partitioned;
-	utils::binary::read(stream, partitioned);
-#if BITPIT_ENABLE_MPI==1
-	setPartitioned(partitioned);
-#endif
 
 	// Halo size
 #if BITPIT_ENABLE_MPI==1

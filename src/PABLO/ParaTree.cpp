@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -448,7 +448,11 @@ namespace bitpit {
         m_serial    = true;
         m_errorFlag = 0;
 
-        m_maxDepth  = 0;
+        if (createRoot) {
+            m_maxDepth = 0;
+        } else {
+            m_maxDepth = -1;
+        }
 
         m_octree.reset(createRoot);
         m_globalNumOctants = getNumOctants();
@@ -581,11 +585,11 @@ namespace bitpit {
             throw std::runtime_error ("The version of the file does not match the required version");
         }
 
-        // Check if the number of processors matches
+        // Check if the number of processes matches
         int nProcs;
         utils::binary::read(stream, nProcs);
         if (nProcs != m_nproc) {
-            throw std::runtime_error ("The restart was saved with a different number of processors.");
+            throw std::runtime_error ("The restart was saved with a different number of processes.");
         }
 
         // Initialize the tree
@@ -945,9 +949,9 @@ namespace bitpit {
 #endif
 
     /*! Get a constant reference to the vector containing the
-     * global index of the last existing octant in each processor.
+     * global index of the last existing octant in each process.
      * \return A constant reference to the vector containing the
-     * global index of the last existing octant in each processor.
+     * global index of the last existing octant in each process.
      */
     const std::vector<uint64_t> &
     ParaTree::getPartitionRangeGlobalIdx() const {
@@ -955,9 +959,9 @@ namespace bitpit {
     };
 
     /*! Get a constant reference to the vector containing the
-     * Morton number of the first octant on each processor.
+     * Morton number of the first octant on each process.
      * \return Constant reference to the vector containing the
-     * Morton number of the first octant on each processor.
+     * Morton number of the first octant on each process.
      */
     const std::vector<uint64_t> &
     ParaTree::getPartitionFirstDesc() const {
@@ -965,9 +969,9 @@ namespace bitpit {
     };
 
     /*! Get a constant reference to the vector containing the
-     * Morton number of the last possible octant on each processor.
+     * Morton number of the last possible octant on each process.
      * \return Constant reference to the vector containing the
-     * Morton number of the last possible octant on each processor.
+     * Morton number of the last possible octant on each process.
      */
     const std::vector<uint64_t> &
     ParaTree::getPartitionLastDesc() const {
@@ -2574,19 +2578,56 @@ namespace bitpit {
         }
     }
 
+#if BITPIT_ENABLE_MPI==1
     /*! Set the first finer descendant of the local tree.
      */
     void
-    ParaTree::setFirstDescMorton(){
-        m_octree.setFirstDescMorton();
+    ParaTree::updateGlobalFirstDescMorton(){
+
+        // Exchange first descendant information
+        uint64_t firstDescMorton = m_octree.getFirstDescMorton();
+        m_errorFlag = MPI_Allgather(&firstDescMorton,1,MPI_UINT64_T,m_partitionFirstDesc.data(),1,MPI_UINT64_T,m_comm);
+
+        // Fix first descendant for empty partitions
+        int pp = m_nproc-1;
+        if (m_partitionRangeGlobalIdx[pp] == m_partitionRangeGlobalIdx[pp-1]){
+            m_partitionFirstDesc[pp] = std::numeric_limits<uint64_t>::max();
+            if (m_rank == pp){
+                m_octree.m_firstDescMorton = std::numeric_limits<uint64_t>::max();
+            }
+        }
+        for (int p = pp-1; p > 0; --p){
+            if (m_partitionRangeGlobalIdx[p] == m_partitionRangeGlobalIdx[p-1]){
+                m_partitionFirstDesc[p] = m_partitionFirstDesc[p+1];
+                if (m_rank == p){
+                    m_octree.m_firstDescMorton = m_partitionFirstDesc[p+1];
+                }
+            }
+        }
     };
 
     /*! Set the last finer descendant of the local tree.
      */
     void
-    ParaTree::setLastDescMorton(){
-        m_octree.setLastDescMorton();
+    ParaTree::updateGlobalLasttDescMorton(){
+
+        // Exchange last descendant information
+        uint64_t lastDescMorton = m_octree.getLastDescMorton();
+        m_errorFlag = MPI_Allgather(&lastDescMorton,1,MPI_UINT64_T,m_partitionLastDesc.data(),1,MPI_UINT64_T,m_comm);
+
+        // Fix first descendant for empty partitions
+        //
+        // Attention rank = 0 can't be empty
+        for (int p = 1; p < m_nproc; ++p){
+            if (m_partitionRangeGlobalIdx[p] == m_partitionRangeGlobalIdx[p-1]){
+                m_partitionLastDesc[p] = m_partitionLastDesc[p-1];
+                if (m_rank == p){
+                    m_octree.m_lastDescMorton = m_partitionLastDesc[p-1];
+                }
+            }
+        }
     };
+#endif
 
     // =================================================================================== //
     // OTHER METHODS												    			   //
@@ -2601,27 +2642,25 @@ namespace bitpit {
      * in their structure (octants or ghosts) and sets isghost[i] = true if the
      * i-th neighbour is ghost in the local tree.
      * \param[in] oct Pointer to the current octant.
-     * \param[in] haveIidx Boolean flag to specify if the octant is passed with a valid idx
-     * \param[in] idx Index of the searching octant. Its value is not important if haveIidx is false
      * \param[in] iface Index of face/edge/node passed through for neighbours finding
      * \param[in] codim Codimension of the iface-th entity 1=edge, 2=node
      * \param[out] neighbours Vector of neighbours indices in octants/ghosts structure
      * \param[out] isghost Vector with boolean flag; true if the respective octant in neighbours is a ghost octant. Can be ignored in serial runs
      * \param[in] onlyinternal A boolean flag to specify if neighbours have to be found among all the octants (false) or only among the internal ones (true).*/
     void
-    ParaTree::findNeighbours(const Octant* oct, bool haveIidx, uint32_t idx, uint8_t iface, uint8_t codim, u32vector & neighbours, bvector & isghost, bool onlyinternal) const{
+    ParaTree::findNeighbours(const Octant* oct, uint8_t iface, uint8_t codim, u32vector & neighbours, bvector & isghost, bool onlyinternal) const{
 
         bool	Fedge = ((codim==2) && (m_dim==3));
         bool	Fnode = (codim == m_dim);
 
         if (codim == 1){
-            m_octree.findNeighbours(oct, haveIidx, idx, iface, neighbours, isghost, onlyinternal);
+            m_octree.findNeighbours(oct, iface, neighbours, isghost, onlyinternal);
         }
         else if (Fedge){
-            m_octree.findEdgeNeighbours(oct, haveIidx, idx, iface, neighbours, isghost, onlyinternal);
+            m_octree.findEdgeNeighbours(oct, iface, neighbours, isghost, onlyinternal);
         }
         else if (Fnode){
-            m_octree.findNodeNeighbours(oct, haveIidx, idx, iface, neighbours, isghost, onlyinternal);
+            m_octree.findNodeNeighbours(oct, iface, neighbours, isghost, onlyinternal);
         }
         else {
             neighbours.clear();
@@ -2645,7 +2684,7 @@ namespace bitpit {
 
         const Octant* oct = &m_octree.m_octants[idx];
 
-        findNeighbours(oct, true, idx, iface, codim, neighbours, isghost, false);
+        findNeighbours(oct, iface, codim, neighbours, isghost, false);
 
     };
 
@@ -2661,7 +2700,7 @@ namespace bitpit {
     void
     ParaTree::findNeighbours(const Octant* oct, uint8_t iface, uint8_t codim, u32vector & neighbours, bvector & isghost) const {
 
-        findNeighbours(oct, false, 0, iface, codim, neighbours, isghost, false);
+        findNeighbours(oct, iface, codim, neighbours, isghost, false);
 
     };
 
@@ -2678,7 +2717,7 @@ namespace bitpit {
 
         const Octant* oct = &m_octree.m_ghosts[idx];
         bvector isghost;
-        findNeighbours(oct, true, idx, iface, codim, neighbours, isghost, true);
+        findNeighbours(oct, iface, codim, neighbours, isghost, true);
 
     };
 
@@ -2695,7 +2734,7 @@ namespace bitpit {
     ParaTree::findGhostNeighbours(uint32_t idx, uint8_t iface, uint8_t codim, u32vector & neighbours, bvector & isghost) const {
 
         const Octant* oct = &m_octree.m_ghosts[idx];
-        findNeighbours(oct, true, idx, iface, codim, neighbours, isghost, false);
+        findNeighbours(oct, iface, codim, neighbours, isghost, false);
 
     };
 
@@ -2711,8 +2750,7 @@ namespace bitpit {
     void
     ParaTree::findGhostNeighbours(const Octant* oct, uint8_t iface, uint8_t codim, u32vector & neighbours, bvector & isghost) const {
 
-        uint32_t idx = getIdx(oct);
-        findNeighbours(oct, true, idx, iface, codim, neighbours, isghost, false);
+        findNeighbours(oct, iface, codim, neighbours, isghost, false);
 
     };
 
@@ -2730,7 +2768,7 @@ namespace bitpit {
 
         // Get vertex neighbours
         int dim = getDim();
-        m_octree.findNodeNeighbours(oct, false, 0, inode, neighbours, isghost, false);
+        m_octree.findNodeNeighbours(oct, inode, neighbours, isghost, false);
 
         int octantLevel = getLevel(oct);
         if (dim == 3) {
@@ -2836,13 +2874,13 @@ namespace bitpit {
      */
     void
     ParaTree::findAllCodimensionNeighbours(Octant* oct, u32vector & neighbours, bvector & isghost){
-        std::array<uint8_t, 4> codimensionsIndeces;
-        codimensionsIndeces[0] = 0;
-        codimensionsIndeces[1] = getNfaces();
+        std::array<uint8_t, 4> nCodimensionItems;
+        nCodimensionItems[0] = 0;
+        nCodimensionItems[1] = getNfaces();
         if(m_dim == 3){
-            codimensionsIndeces[2] = getNedges();
+            nCodimensionItems[2] = getNedges();
         }
-        codimensionsIndeces[m_dim] = getNnodes();
+        nCodimensionItems[m_dim] = getNnodes();
 
         neighbours.clear();
         neighbours.reserve(26);
@@ -2851,8 +2889,8 @@ namespace bitpit {
         u32vector singleCodimNeighbours;
         bvector singleCodimIsGhost;
         for(uint8_t codim = 1; codim <= m_dim; ++codim){
-            for(int icodim = 0; icodim < codimensionsIndeces[codim]; ++icodim){
-                findNeighbours(oct,icodim,codim,singleCodimNeighbours,singleCodimIsGhost);
+            for(int item = 0; item < nCodimensionItems[codim]; ++item){
+                findNeighbours(oct,item,codim,singleCodimNeighbours,singleCodimIsGhost);
                 for(size_t i = 0; i < singleCodimIsGhost.size(); ++i){
                     isghost.push_back(singleCodimIsGhost[i]);
                     neighbours.push_back(singleCodimNeighbours[i]);
@@ -2885,13 +2923,13 @@ namespace bitpit {
      */
     void
     ParaTree::findGhostAllCodimensionNeighbours(Octant* oct, u32vector & neighbours, bvector & isghost){
-        std::array<uint8_t, 4> codimensionsIndeces;
-        codimensionsIndeces[0] = 0;
-        codimensionsIndeces[1] = getNfaces();
+        std::array<uint8_t, 4> nCodimensionItems;
+        nCodimensionItems[0] = 0;
+        nCodimensionItems[1] = getNfaces();
         if(m_dim == 3){
-            codimensionsIndeces[2] = getNedges();
+            nCodimensionItems[2] = getNedges();
         }
-        codimensionsIndeces[m_dim] = getNnodes();
+        nCodimensionItems[m_dim] = getNnodes();
 
         neighbours.clear();
         neighbours.reserve(26);
@@ -2900,8 +2938,8 @@ namespace bitpit {
         u32vector singleCodimNeighbours;
         bvector singleCodimIsGhost;
         for(uint8_t codim = 1; codim <= m_dim; ++codim){
-            for(int icodim = 0; icodim < codimensionsIndeces[codim]; ++icodim){
-                findGhostNeighbours(oct,icodim,codim,singleCodimNeighbours,singleCodimIsGhost);
+            for(int item = 0; item < nCodimensionItems[codim]; ++item){
+                findGhostNeighbours(oct,item,codim,singleCodimNeighbours,singleCodimIsGhost);
                 for(size_t i = 0; i < singleCodimIsGhost.size(); ++i){
                     isghost.push_back(singleCodimIsGhost[i]);
                     neighbours.push_back(singleCodimNeighbours[i]);
@@ -3219,7 +3257,7 @@ namespace bitpit {
                 bool isInIdxtry = true;
 
                 for(int i = 0; i < m_dim; ++i){
-                    isInIdxtry *= (point[i] >= anchor_idxtry[i] && point[i] <= anchor_idxtry[i] + size_try);
+                    isInIdxtry = isInIdxtry && (point[i] >= anchor_idxtry[i] && point[i] <= (anchor_idxtry[i] + size_try));
                 }
 
                 if( isInIdxtry){
@@ -3857,10 +3895,11 @@ namespace bitpit {
         return globalDone;
     }
 
-    /*! Get the local current maximum size of the octree.
-     * \return Local current maximum size of the local partition of the octree.
+    /*! Get the current maximum size of the octree.
+     *  If the tree is empty a negative number is returned.
+     * \return Current maximum size of the octree.
      */
-    uint8_t
+    int8_t
     ParaTree::getMaxDepth() const{
         return m_maxDepth;
     };
@@ -4198,17 +4237,17 @@ namespace bitpit {
 
     /**
      * Evaluate the elements of the current partition that will be exchanged
-     * with other processors during the load balance.
+     * with other processes during the load balance.
      *
      * \param[in] weights are the weights of the local octants (if a null
      * pointer is given a uniform distribution is used)
      * \return The ranges of local ids that will be exchanged with other
-     * processors.
+     * processes.
      */
     ParaTree::LoadBalanceRanges
     ParaTree::evalLoadBalanceRanges(dvector *weights){
 
-        // If there is only one processor no octants can be exchanged
+        // If there is only one process no octants can be exchanged
         if (m_nproc == 1) {
             LoadBalanceRanges loadBalanceInfo;
             loadBalanceInfo.sendAction = LoadBalanceRanges::ACTION_NONE;
@@ -4231,7 +4270,7 @@ namespace bitpit {
 
     /**
      * Evaluate the elements of the current partition that will be exchanged
-     * with other processors during the load balance.
+     * with other processes during the load balance.
      *
      * The families of octants of a desired level are retained compact on the
      * same process.
@@ -4241,12 +4280,12 @@ namespace bitpit {
      * \param[in] weights are the weights of the local octants (if a null
      * pointer is given a uniform distribution is used)
      * \return The ranges of local ids that will be exchanged with other
-     * processors.
+     * processes.
      */
     ParaTree::LoadBalanceRanges
     ParaTree::evalLoadBalanceRanges(uint8_t level, dvector *weights){
 
-        // If there is only one processor no octants can be sent
+        // If there is only one process no octants can be sent
         if (m_nproc == 1) {
             LoadBalanceRanges loadBalanceInfo;
             loadBalanceInfo.sendAction = LoadBalanceRanges::ACTION_NONE;
@@ -4265,16 +4304,16 @@ namespace bitpit {
 
     /**
      * Evaluate the elements of the current partition that will be exchanged
-     * with other processors during the load balance.
+     * with other processes during the load balance.
      *
      * \param[in] updatedPartition is the pointer to the updated pattition
      * \return The ranges of local ids that will be exchanged with other
-     * processors.
+     * processes.
      */
     ParaTree::LoadBalanceRanges
     ParaTree::evalLoadBalanceRanges(const uint32_t *updatedPartition){
 
-        // If there is only one processor no octants can be sent
+        // If there is only one process no octants can be sent
         if (m_nproc == 1) {
              LoadBalanceRanges loadBalanceInfo;
             loadBalanceInfo.sendAction = LoadBalanceRanges::ACTION_NONE;
@@ -4291,17 +4330,17 @@ namespace bitpit {
 
     /**
      * Evaluate the elements of the current partition that will be sent to
-     * other processors after the load balance.
+     * other processes after the load balance.
      *
      * \param[in] updatedPartition is the pointer to the updated pattition
-     * \return The range of local ids that will be sent to other processors.
+     * \return The range of local ids that will be sent to other processes.
      */
     ParaTree::ExchangeRanges
     ParaTree::evalLoadBalanceSendRanges(const uint32_t *updatedPartition){
 
         ExchangeRanges sendRanges;
 
-        // If there is only one processor no octants can be sent
+        // If there is only one process no octants can be sent
         if (m_nproc == 1) {
             return sendRanges;
         }
@@ -4344,18 +4383,18 @@ namespace bitpit {
 
     /**
      * Evaluate the elements of the current partition that will be received
-     * from other processors after the load balance.
+     * from other processes after the load balance.
      *
      * \param[in] updatedPartition is the pointer to the updated pattition
      * \return The range of local ids that will be received from other
-     * processors.
+     * processes.
      */
     ParaTree::ExchangeRanges
     ParaTree::evalLoadBalanceRecvRanges(const uint32_t *updatedPartition){
 
         ExchangeRanges recvRanges;
 
-        // If there is only one processor no octants can be received
+        // If there is only one process no octants can be received
         if (m_nproc == 1) {
             return recvRanges;
         }
@@ -4634,7 +4673,7 @@ namespace bitpit {
                     m_partitionRangeGlobalIdx0[iproc] = m_partitionRangeGlobalIdx[iproc];
                 }
                 //update m_maxDepth
-                m_errorFlag = MPI_Allreduce(&m_octree.m_localMaxDepth,&m_maxDepth,1,MPI_UINT8_T,MPI_MAX,m_comm);
+                m_errorFlag = MPI_Allreduce(&m_octree.m_localMaxDepth,&m_maxDepth,1,MPI_INT8_T,MPI_MAX,m_comm);
                 //update m_globalNumOctants
                 uint64_t local_num_octants = getNumOctants();
                 m_errorFlag = MPI_Allreduce(&local_num_octants,&m_globalNumOctants,1,MPI_UINT64_T,MPI_SUM,m_comm);
@@ -4683,229 +4722,73 @@ namespace bitpit {
      */
     void
     ParaTree::computePartition(const dvector *weight, uint32_t *partition){
-        if(m_serial){
 
-            double division_result = 0;
-            double global_weight = 0.0;
-            for (unsigned int i=0; i<weight->size(); i++){
-                global_weight += (*weight)[i];
-            }
-            division_result = global_weight/(double)m_nproc;
+        assert(weight->size() >= m_octree.m_sizeOctants);
 
-            //Estimate resulting weight distribution starting from proc 0 (sending tail)
-            //Estimate sending weight by each proc in initial conf (sending tail)
-            uint32_t i = 0, tot = 0;
-            int iproc = 0;
-            while (iproc < m_nproc-1){
-                double partial_weight = 0.0;
-                partition[iproc] = 0;
-                while(partial_weight < division_result){
-                    partial_weight += (*weight)[i];
-                    tot++;
-                    partition[iproc]++;
-                    i++;
-                }
-                iproc++;
+        // Evaluate global weights
+        //
+        // If the tree is serial, all process have all the octants, hence
+        // global weights and local weights are the same.
+        std::vector<double> globalWeightsStorage;
+
+        const double *globalWeights;
+        if (m_serial) {
+            globalWeights = weight->data();
+        } else {
+            // Information about current partitioning and displacements should
+            // be stored using uint32_t, however the maximum number of items
+            // that can be exchanged using MPI funcitons is limited to INT_MAX.
+            assert(m_globalNumOctants <= INT_MAX);
+            std::vector<int> currentPartition(m_nproc);
+            MPI_Allgather(&(m_octree.m_sizeOctants), 1, MPI_INT, currentPartition.data(), 1, MPI_INT, m_comm);
+
+            std::vector<int> displacements(m_nproc);
+            displacements[0] = 0;
+            for(int i = 1; i < m_nproc; ++i){
+                displacements[i] = displacements[i - 1] + currentPartition[i - 1];
             }
-            partition[m_nproc-1] = weight->size() - tot;
+
+            globalWeightsStorage.resize(m_globalNumOctants);
+            globalWeights = globalWeightsStorage.data();
+            MPI_Allgatherv(weight->data(), m_octree.m_sizeOctants, MPI_DOUBLE, globalWeightsStorage.data(),
+                           currentPartition.data(), displacements.data(), MPI_DOUBLE, m_comm);
         }
-        else{
 
-            int weightSize = weight->size();
-            double* gweight;
-            double* lweight = new double[weightSize];
-
-            for (unsigned int i=0; i<weight->size(); i++){
-                lweight[i] = (*weight)[i];
-            }
-
-            int *oldpartition = new int[m_nproc];
-            int *displays = new int[m_nproc];
-            MPI_Allgather(&weightSize,1,MPI_INT,oldpartition,1,MPI_INT,m_comm);
-            int globalNofOctant = 0;
-            for(int i = 0; i < m_nproc; ++i){
-                displays[i] = globalNofOctant;
-                globalNofOctant += oldpartition[i];
-            }
-            gweight = new double[globalNofOctant];
-            MPI_Allgatherv(lweight,weightSize,MPI_DOUBLE,gweight,oldpartition,displays,MPI_DOUBLE,m_comm);
-
-            double division_result = 0;
-            double global_weight = 0.0;
-            for (int i=0; i<globalNofOctant; i++){
-                global_weight += gweight[i];
-            }
-            division_result = global_weight/(double)m_nproc;
-
-            //Estimate resulting weight distribution starting from proc 0 (sending tail)
-            //Estimate sending weight by each proc in initial conf (sending tail)
-            uint32_t i = 0, tot = 0;
-            int iproc = 0;
-            while (iproc < m_nproc-1){
-                double partial_weight = 0.0;
-                partition[iproc] = 0;
-                while(partial_weight < division_result && (int32_t) i < globalNofOctant){
-                    partial_weight += gweight[i];
-                    tot++;
-                    partition[iproc]++;
-                    i++;
-                }
-                global_weight = 0;
-                for(int j = i; j < globalNofOctant; ++j)
-                    global_weight += gweight[j];
-                division_result = global_weight/double(m_nproc-(iproc+1));
-                iproc++;
-            }
-            partition[m_nproc-1] = globalNofOctant - tot;
-
-            delete [] oldpartition;
-            delete [] displays;
-            delete [] lweight;
-            delete [] gweight;
-
-            //TODO CHECK OLD ALGORITHM
-            //		double division_result = 0;
-            //		double remind = 0;
-            //		dvector local_weight(m_nproc,0.0);
-            //		dvector temp_local_weight(m_nproc,0.0);
-            //		dvector2D sending_weight(m_nproc, dvector(m_nproc,0.0));
-            //		double* rbuff = new double[m_nproc];
-            //		double global_weight = 0.0;
-            //		for (int i=0; i<weight->size(); i++){
-            //			local_weight[m_rank] += (*weight)[i];
-            //		}
-            //		m_errorFlag = MPI_Allgather(&local_weight[m_rank],1,MPI_DOUBLE,rbuff,1,MPI_DOUBLE,m_comm);
-            //		for (int i=0; i<m_nproc; i++){
-            //			local_weight[i] = rbuff[i];
-            //			global_weight += rbuff[i];
-            //		}
-            //		delete [] rbuff; rbuff = NULL;
-            //		division_result = global_weight/(double)m_nproc;
-            //
-            //		//Estimate resulting weight distribution starting from proc 0 (sending tail)
-            //
-            //		temp_local_weight = local_weight;
-            //		//Estimate sending weight by each proc in initial conf (sending tail)
-            //
-            //		for (int iter = 0; iter < 1; iter++){
-            //
-            //			vector<double> delta(m_nproc);
-            //			for (int i=0; i<m_nproc; i++){
-            //				delta[i] = temp_local_weight[i] - division_result;
-            //			}
-            //
-            //			for (int i=0; i<m_nproc-1; i++){
-            //
-            //				double post_weight = 0.0;
-            //				for (int j=i+1; j<m_nproc; j++){
-            //					post_weight += temp_local_weight[j];
-            //				}
-            //				if (temp_local_weight[i] > division_result){
-            //
-            //					delta[i] = temp_local_weight[i] - division_result;
-            //					if (post_weight < division_result*(m_nproc-i-1)){
-            //
-            //						double post_delta =  division_result*(m_nproc-i-1) - post_weight;
-            //						double delta_sending = min(local_weight[i], min(delta[i], post_delta));
-            //						int jproc = i+1;
-            //						double sending = 0;
-            //						while (delta_sending > 0 && jproc<m_nproc){
-            //							sending = min(division_result, delta_sending);
-            //							sending = min(sending, (division_result-temp_local_weight[jproc]));
-            //							sending = max(sending, 0.0);
-            //							sending_weight[i][jproc] += sending;
-            //							temp_local_weight[jproc] += sending;
-            //							temp_local_weight[i] -= sending;
-            //							delta_sending -= sending;
-            //							delta[i] -= delta_sending;
-            //							jproc++;
-            //						}
-            //					} //post
-            //				}//weight>
-            //			}//iproc
-            //
-            //			for (int i = m_nproc-1; i>0; i--){
-            //
-            //				double pre_weight = 0.0;
-            //				for (int j=i-1; j>=0; j--){
-            //					pre_weight += temp_local_weight[j];
-            //				}
-            //				if (temp_local_weight[i] > division_result){
-            //
-            //					delta[i] = temp_local_weight[i] - division_result;
-            //					if (pre_weight < division_result*(i)){
-            //
-            //						double pre_delta =  division_result*(i) - pre_weight;
-            //						double delta_sending = min(local_weight[i], min(temp_local_weight[i], min(delta[i], pre_delta)));
-            //						int jproc = i-1;
-            //						double sending = 0;
-            //						while (delta_sending > 0 && jproc >=0){
-            //							sending = min(division_result, delta_sending);
-            //							sending = min(sending, (division_result-temp_local_weight[jproc]));
-            //							sending = max(sending, 0.0);
-            //							sending_weight[i][jproc] += sending;
-            //							temp_local_weight[jproc] += sending;
-            //							temp_local_weight[i] -= sending;
-            //							delta_sending -= sending;
-            //							delta[i] -= delta_sending;
-            //							jproc--;
-            //						}
-            //					}//pre
-            //				}//weight>
-            //			}//iproc
-            //		}//iter
-            //
-            //		//Update partition locally
-            //		//to send
-            //		u32vector sending_cell(m_nproc,0);
-            //		int i = getNumOctants();;
-            //		for (int jproc=m_nproc-1; jproc>m_rank; jproc--){
-            //			double pack_weight = 0.0;
-            //			while(pack_weight < sending_weight[m_rank][jproc] && i > 0){
-            //				i--;
-            //				pack_weight += (*weight)[i];
-            //				sending_cell[jproc]++;
-            //			}
-            //		}
-            //		partition[m_rank] = i;
-            //		i = 0;
-            //		for (int jproc=0; jproc<m_rank; jproc++){
-            //			double pack_weight = 0.0;
-            //			while(pack_weight < sending_weight[m_rank][jproc] && i <  getNumOctants()-1){
-            //				i++;
-            //				pack_weight += (*weight)[i];
-            //				sending_cell[jproc]++;
-            //			}
-            //		}
-            //		partition[m_rank] -= i;
-            //
-            //		//to receive
-            //		u32vector rec_cell(m_nproc,0);
-            //		MPI_Request* req = new MPI_Request[m_nproc*10];
-            //		MPI_Status* stats = new MPI_Status[m_nproc*10];
-            //		int nReq = 0;
-            //		for (int iproc=0; iproc<m_nproc; iproc++){
-            //			m_errorFlag = MPI_Irecv(&rec_cell[iproc],1,MPI_UINT32_T,iproc,m_rank,m_comm,&req[nReq]);
-            //			++nReq;
-            //		}
-            //		for (int iproc=0; iproc<m_nproc; iproc++){
-            //			m_errorFlag =  MPI_Isend(&sending_cell[iproc],1,MPI_UINT32_T,iproc,iproc,m_comm,&req[nReq]);
-            //			++nReq;
-            //		}
-            //		MPI_Waitall(nReq,req,stats);
-            //
-            //		delete [] req; req = NULL;
-            //		delete [] stats; stats = NULL;
-            //
-            //		i = 0;
-            //		for (int jproc=0; jproc<m_nproc; jproc++){
-            //			i+= rec_cell[jproc];
-            //		}
-            //		partition[m_rank] += i;
-            //		uint32_t part = partition[m_rank];
-            //		m_errorFlag = MPI_Allgather(&part,1,MPI_UINT32_T,partition,1,MPI_UINT32_T,m_comm);
-
+        // Initialize partitioning
+        for (int i = 0; i < m_nproc; ++i) {
+            partition[i] = 0;
         }
+
+        // Assign octants to partitions
+        //
+        // After evaluationg the target weight of a partition, octants will
+        // be added to that partition until the weigth of the partition is
+        // greater or equal the target weigth or until all the octant are
+        // assigned
+        uint32_t nAssigendOctants = 0;
+        for (int i = 0; i < m_nproc - 1; ++i) {
+            double unassignedWeight = 0.;
+            for (uint32_t n=nAssigendOctants; n<m_globalNumOctants; n++){
+                unassignedWeight += globalWeights[n];
+            }
+            double targetWeight = unassignedWeight / (m_nproc - i);
+
+            double partitionWeight = 0.;
+            while(partitionWeight < targetWeight){
+                partitionWeight += globalWeights[nAssigendOctants];
+                partition[i]++;
+
+                nAssigendOctants++;
+                if (nAssigendOctants == m_globalNumOctants) {
+                    break;
+                }
+            }
+
+            if (nAssigendOctants == m_globalNumOctants) {
+                    break;
+            }
+        }
+        partition[m_nproc-1] = m_globalNumOctants - nAssigendOctants;
     };
 
     /*! Compute the partition of the octree over the processes (only compute the information about
@@ -4913,28 +4796,18 @@ namespace bitpit {
      * of a desired level are retained compact on the same process.
      * \param[out] partition Pointer to partition information array. partition[i] = number of octants
      * to be stored on the i-th process (i-th rank).
-     * \param[in] level_ Number of level over the max depth reached in the tree at
-     * which families of octants are fixed compact on the same process
-     * (level=0 is uniform partition).
+     * \param[in] level_ Number of level above the max depth reached in the tree at
+     * which families of octants are fixed compact on the same process (setting level_=0
+     * is the same as partitioning with no family constraints). The maximum allowed value
+     * for level_ is one level below the maximum depth reached in the tree (i.e., it is
+     * possible to keep compact only families up to level 1).
      * \param[in] weight Pointer to weight array. weight[i] = weight of i-th local octant.
      */
     void
     ParaTree::computePartition(uint8_t level_, const dvector *weight, uint32_t *partition) {
 
-        uint8_t level = uint8_t(min(int(max(int(m_maxDepth) - int(level_), int(1))) , int(TreeConstants::MAX_LEVEL)));
+        // Compute partitioning without family constrains
         uint32_t* partition_temp = new uint32_t[m_nproc];
-        uint8_t* boundary_proc = new uint8_t[m_nproc-1];
-        uint8_t dimcomm, indcomm;
-        uint8_t* glbdimcomm = new uint8_t[m_nproc];
-        uint8_t* glbindcomm = new uint8_t[m_nproc];
-
-        uint32_t Dh = uint32_t(pow(double(2),double(TreeConstants::MAX_LEVEL-level)));
-        uint32_t istart, nocts, rest, forw, backw;
-        uint32_t i = 0, iproc, j;
-        uint64_t sum;
-        int32_t* pointercomm;
-        int32_t* deplace = new int32_t[m_nproc-1];
-
         if (weight==NULL){
             computePartition(partition_temp);
         }
@@ -4942,6 +4815,29 @@ namespace bitpit {
             computePartition(weight, partition_temp);
         }
 
+        // Modify partitioning to take into account family constrains
+        //
+        // Partitioning is modified to guarantee that families of octants at
+        // the desired level above the maximum depth reached in the tree
+        // are retained compact on the same process.
+        uint8_t level = uint8_t(min(int(max(int(m_maxDepth) - int(level_), int(1))) , int(TreeConstants::MAX_LEVEL)));
+        uint8_t* new_boundary_owner = new uint8_t[m_nproc-1];
+        uint8_t new_interfaces_count;
+        uint8_t first_new_interface_rank_index;
+        uint8_t* new_interfaces_count_per_rank = new uint8_t[m_nproc];
+        uint8_t* first_new_interface_rank_index_per_rank = new uint8_t[m_nproc];
+
+        uint32_t Dh = uint32_t(pow(double(2),double(TreeConstants::MAX_LEVEL-level)));
+        uint32_t istart, nocts, rest;
+        uint32_t forw = 0, backw = 0;
+        uint32_t i = 0, iproc, j;
+        uint64_t sum;
+        int32_t* pointercomm;
+        int32_t* deplace = new int32_t[m_nproc-1];
+
+        // Find processes currently owning the new incoming process boundaries
+        // boundary_proc[i] = j means that the new process interface between i-th and (i+1)-th
+        // processes is falling currently on j-th process
         j = 0;
         sum = 0;
         for (iproc=0; iproc<(uint32_t)(m_nproc-1); iproc++){
@@ -4949,38 +4845,72 @@ namespace bitpit {
             while(sum > m_partitionRangeGlobalIdx[j]){
                 j++;
             }
-            boundary_proc[iproc] = j;
+            new_boundary_owner[iproc] = j;
         }
+
         nocts = getNumOctants();
         sum = 0;
-        dimcomm = 0;
-        indcomm = 0;
+
+        // Store how many process interfaces fall in the current rank. For these interfaces
+        // the current rank has to communicate the info about the correction to the partition
+        // strcture aimed to maintain the families compact.
+        new_interfaces_count = 0;
+
+        // Store the index of the first process owner of the new process interface
+        // It will be the starting index for the communication of the corrections on
+        // the partition structure.
+        first_new_interface_rank_index = 0;
+
         for (iproc=0; iproc<(uint32_t)(m_nproc-1); iproc++){
             deplace[iproc] = 1;
             sum += partition_temp[iproc];
-            if (boundary_proc[iproc] == m_rank){
-                if (dimcomm == 0){
-                    indcomm = iproc;
+
+            // If the current process owns a new process interface, check if
+            // the family at the interface is compact and store the correction on the
+            // temporary partition structure.
+            if (new_boundary_owner[iproc] == m_rank){
+                if (new_interfaces_count == 0){
+                    first_new_interface_rank_index = iproc;
                 }
-                dimcomm++;
+                new_interfaces_count++;
+
+                // Place istart at index of the last octant at new incoming process interface
                 if (m_rank!=0)
                     istart = sum - m_partitionRangeGlobalIdx[m_rank-1] - 1;
                 else
                     istart = sum;
 
+                // Compute the rest w.r.t. the size of the octant of the same size
+                // of a compact family of the desired level
                 i = istart;
                 rest = m_octree.m_octants[i].getLogicalX()%Dh + m_octree.m_octants[i].getLogicalY()%Dh;
+                if (m_dim == 3){
+                    rest += m_octree.m_octants[i].getLogicalZ()%Dh;
+                }
+
+                // Deplace forward the index of the octant i defining the process boundary until the previous
+                // defined rest is zero, i.e. the families are compact up to the target level.
                 while(rest!=0){
-                    if (i==nocts){
+                    if (i==nocts-1){
                         i = istart + nocts;
                         break;
                     }
                     i++;
                     rest = m_octree.m_octants[i].getLogicalX()%Dh + m_octree.m_octants[i].getLogicalY()%Dh;
+                    if (m_dim == 3){
+                        rest += m_octree.m_octants[i].getLogicalZ()%Dh;
+                    }
                 }
+
+                // Store the computed forward correction (= local number of octants if not found)
                 forw = i - istart;
+
+                // Do the same for a backward correction try
                 i = istart;
                 rest = m_octree.m_octants[i].getLogicalX()%Dh + m_octree.m_octants[i].getLogicalY()%Dh;
+                if (m_dim == 3){
+                    rest += m_octree.m_octants[i].getLogicalZ()%Dh;
+                }
                 while(rest!=0){
                     if (i==0){
                         i = istart - nocts;
@@ -4988,8 +4918,19 @@ namespace bitpit {
                     }
                     i--;
                     rest = m_octree.m_octants[i].getLogicalX()%Dh + m_octree.m_octants[i].getLogicalY()%Dh;
+                    if (m_dim == 3){
+                        rest += m_octree.m_octants[i].getLogicalZ()%Dh;
+                    }
                 }
+
+                // Store the backward correction previously computed
                 backw = istart - i;
+
+                // If no correction are needed forward and backward corrections are zero,
+                // so the deplace term will be zero and, even if communicated it will no correct
+                // the partition structure.
+                // If correction is needed the lower between forward and backward corrections
+                // is the correct one, beeing the other one overdimensioned with local number of octants value.
                 if (forw<backw)
                     deplace[iproc] = forw;
                 else
@@ -4997,13 +4938,19 @@ namespace bitpit {
             }
         }
 
-        m_errorFlag = MPI_Allgather(&dimcomm,1,MPI_UINT8_T,glbdimcomm,1,MPI_UINT8_T,m_comm);
-        m_errorFlag = MPI_Allgather(&indcomm,1,MPI_UINT8_T,glbindcomm,1,MPI_UINT8_T,m_comm);
+        // Communicate the right corrections to other processes
+        m_errorFlag = MPI_Allgather(&new_interfaces_count,1,MPI_UINT8_T,new_interfaces_count_per_rank,1,MPI_UINT8_T,m_comm);
+        m_errorFlag = MPI_Allgather(&first_new_interface_rank_index,1,MPI_UINT8_T,first_new_interface_rank_index_per_rank,1,MPI_UINT8_T,m_comm);
         for (iproc=0; iproc<(uint32_t)(m_nproc); iproc++){
-            pointercomm = &deplace[glbindcomm[iproc]];
-            m_errorFlag = MPI_Bcast(pointercomm, glbdimcomm[iproc], MPI_INT32_T, iproc, m_comm);
+            pointercomm = &deplace[first_new_interface_rank_index_per_rank[iproc]];
+            m_errorFlag = MPI_Bcast(pointercomm, new_interfaces_count_per_rank[iproc], MPI_INT32_T, iproc, m_comm);
         }
 
+        // Apply the corrections stored in deplace container to the termporary
+        // computed partition structure.
+        // The new number of octants for each processors are increased by the
+        // (signed) deplace value related to itself and decreased by the (signed)
+        // deplace value of the previous process.
         for (iproc=0; iproc<(uint32_t)(m_nproc); iproc++){
             if (iproc < (uint32_t)(m_nproc-1))
                 partition[iproc] = partition_temp[iproc] + deplace[iproc];
@@ -5014,9 +4961,9 @@ namespace bitpit {
         }
 
         delete [] partition_temp; partition_temp = NULL;
-        delete [] boundary_proc; boundary_proc = NULL;
-        delete [] glbdimcomm; glbdimcomm = NULL;
-        delete [] glbindcomm; glbindcomm = NULL;
+        delete [] new_boundary_owner; new_boundary_owner = NULL;
+        delete [] new_interfaces_count_per_rank; new_interfaces_count_per_rank = NULL;
+        delete [] first_new_interface_rank_index_per_rank; first_new_interface_rank_index_per_rank = NULL;
         delete [] deplace; deplace = NULL;
     }
 
@@ -5041,25 +4988,16 @@ namespace bitpit {
                 m_partitionRangeGlobalIdx[p] += rbuff[pp];
             --m_partitionRangeGlobalIdx[p];
         }
-        //update first last descendant
-        if(getNumOctants()==0){
-            Octant octDesc(m_dim,TreeConstants::MAX_LEVEL,pow(2,TreeConstants::MAX_LEVEL),pow(2,TreeConstants::MAX_LEVEL),(m_dim > 2 ? pow(2,TreeConstants::MAX_LEVEL) : 0));
-            m_octree.m_lastDescMorton = octDesc.computeMorton();
-            m_octree.m_firstDescMorton = std::numeric_limits<uint64_t>::max();
-        }
-        else{
-            m_octree.setFirstDescMorton();
-            m_octree.setLastDescMorton();
-        }
 
-        //update partition_range_position
-        uint64_t lastDescMorton = m_octree.getLastDescMorton();
-        m_errorFlag = MPI_Allgather(&lastDescMorton,1,MPI_UINT64_T,m_partitionLastDesc.data(),1,MPI_UINT64_T,m_comm);
-        uint64_t firstDescMorton = m_octree.getFirstDescMorton();
-        m_errorFlag = MPI_Allgather(&firstDescMorton,1,MPI_UINT64_T,m_partitionFirstDesc.data(),1,MPI_UINT64_T,m_comm);
         m_serial = false;
 
         delete [] rbuff; rbuff = NULL;
+
+        //update first and last descendant
+        m_octree.setFirstDescMorton();
+        m_octree.setLastDescMorton();
+        updateGlobalFirstDescMorton();
+        updateGlobalLasttDescMorton();
     }
 
     /*! Build the structure with the information about the first layer of ghost octants, partition boundary octants
@@ -5095,22 +5033,24 @@ namespace bitpit {
                 bool isFacePbound = false;
                 if(octant.getBound(i) == false){
                     octant.computeFaceVirtualMortons(i, m_maxDepth, &nVirtualNeighbors, &virtualNeighbors);
-                    uint32_t maxDelta = nVirtualNeighbors/2;
-                    for(uint32_t j = 0; j <= maxDelta; ++j){
-                        int neighProcFirst = findOwner(virtualNeighbors[j]);
-                        if (neighProcFirst != m_rank) {
-                            neighProcs.insert(neighProcFirst);
-                            isFacePbound = true;
-                        }
+                    if (nVirtualNeighbors > 0) {
+                        uint32_t maxDelta = nVirtualNeighbors/2;
+                        for(uint32_t j = 0; j <= maxDelta; ++j){
+                            int neighProcFirst = findOwner(virtualNeighbors[j]);
+                            if (neighProcFirst != m_rank) {
+                                neighProcs.insert(neighProcFirst);
+                                isFacePbound = true;
+                            }
 
-                        int neighProcLast = findOwner(virtualNeighbors[nVirtualNeighbors - 1 - j]);
-                        if (neighProcLast != m_rank) {
-                            neighProcs.insert(neighProcLast);
-                            isFacePbound = true;
-                        }
+                            int neighProcLast = findOwner(virtualNeighbors[nVirtualNeighbors - 1 - j]);
+                            if (neighProcLast != m_rank) {
+                                neighProcs.insert(neighProcLast);
+                                isFacePbound = true;
+                            }
 
-                        //					//TODO debug
-                        //					if (abs(pBegin-pEnd) <= 1) j = maxDelta + 1;
+                            //					//TODO debug
+                            //					if (abs(pBegin-pEnd) <= 1) j = maxDelta + 1;
+                        }
                     }
                 }
                 else if(m_periodic[i]){
@@ -5174,7 +5114,7 @@ namespace bitpit {
                 }
             }
 
-            // Build list of internal and processor borders octants
+            // Build list of internal and process borders octants
             if (neighProcs.empty()){
                 m_internals[countint] = &octant;
                 countint++;
@@ -5221,8 +5161,8 @@ namespace bitpit {
         // sources exists.
         //
         // Sources are identified one layer at a time. The first layer is
-        // already known: the processor-border octants. The neighbors of
-        // processor-border octants are the second layer of sources; the
+        // already known: the process-border octants. The neighbors of
+        // process-border octants are the second layer of sources; the
         // neighbors of the second layer of sources are the third layer,
         // and so on an so forth.
         //
@@ -5233,16 +5173,16 @@ namespace bitpit {
         // the sources gathered by the accretion will be ghosts.
         //
         // The identification of the sources starts creating one accretions for
-        // each of the neighboring processors. The accretions are initialized
-        // using the processor-border octants already build: those octants are
+        // each of the neighboring processes. The accretions are initialized
+        // using the process-border octants already build: those octants are
         // the first layer of sources and the seeds for the generation of the
         // second layer. Adding the internal neighbors of the internal seeds to
         // the population, accretions are grown one layer at a time. When an
-        // accretion reaches a neighboring processors (i.e., when a first-layer
+        // accretion reaches a neighboring processes (i.e., when a first-layer
         // ghost enters in the list of foreign seeds), we communicate to the
         // owner of the ghost to create a new accretion and continue the search
         // for the sources. At the end of the procedure, the population of the
-        // accretions on each processor will contain the desired sources.
+        // accretions on each process will contain the desired sources.
 
         // Initialize cache for 1-rings of the internal octants
         std::unordered_map<uint32_t, std::vector<uint64_t>> oneRingsCache;
@@ -5260,7 +5200,7 @@ namespace bitpit {
             // Exchange accretions
             //
             // When a ghost is incorporated in the seeds, the accretion
-            // needs to continue on the processor that owns the ghost.
+            // needs to continue on the process that owns the ghost.
             exchangeGhostHaloAccretions(&accretionDataCommunicator, &accretions);
 
             // Grow accretions
@@ -5270,14 +5210,14 @@ namespace bitpit {
         // To correctly identify the population of the last layer of sources,
         // we need to exchange the accretions one more time. This allows to
         // communicate the foreign seeds found during the last growth to the
-        // processors that own them.
+        // processes that own them.
         exchangeGhostHaloAccretions(&accretionDataCommunicator, &accretions);
 
         //
         // Extract list of sources
         //
-        // Sources are internal octants that are ghosts for other processors,
-        // i.e., internal octants on processors borders (pborder octants).
+        // Sources are internal octants that are ghosts for other processes,
+        // i.e., internal octants on processes borders (pborder octants).
         // The population of the accretions is exaclty made of the sources
         // for the target rank of the accretion.
         for(const AccretionData &accretion : accretions){
@@ -5328,7 +5268,7 @@ namespace bitpit {
             // Initialize the first layer
             //
             // The population and the seeds of the first layer are the octants
-            // on processors borders.
+            // on processes borders.
             const std::vector<uint32_t> &rankBordersPerProc = bordersPerProcEntry.second;
             const std::size_t nRankBordersPerProc = rankBordersPerProc.size();
 
@@ -5436,7 +5376,7 @@ namespace bitpit {
         }
     }
 
-    /*! Exchange the accretions among neighbouring processors.
+    /*! Exchange the accretions among neighbouring processes.
      *
      * Accretions are auxiliary data structures needed for generation of ghost
      * halo. An explanation of how ghost halo is generated can be found in the
@@ -5450,7 +5390,7 @@ namespace bitpit {
     ParaTree::exchangeGhostHaloAccretions(DataCommunicator *dataCommunicator,
                                           std::vector<AccretionData> *accretions) {
 
-        // Generate accretions that has to be sent to other processors
+        // Generate accretions that has to be sent to other processes
         //
         // When the accretion reaches a foreign process (i.e., a ghost is
         // added to the seeds), the ranks that owns the ghost seed have to
@@ -5802,54 +5742,12 @@ namespace bitpit {
     void
     ParaTree::updateAfterCoarse(){
 
+        updateAdapt();
+
 #if BITPIT_ENABLE_MPI==1
-        if(m_serial){
-#endif
-            updateAdapt();
-#if BITPIT_ENABLE_MPI==1
-        }
-        else{
-
-            updateAdapt();
-
-            //update partition_range_position
-            uint64_t lastDescMorton = m_octree.getLastDescMorton();
-            m_errorFlag = MPI_Allgather(&lastDescMorton,1,MPI_UINT64_T,m_partitionLastDesc.data(),1,MPI_UINT64_T,m_comm);
-            uint64_t firstDescMorton = m_octree.getFirstDescMorton();
-            m_errorFlag = MPI_Allgather(&firstDescMorton,1,MPI_UINT64_T,m_partitionFirstDesc.data(),1,MPI_UINT64_T,m_comm);
-
-            //correct first and last desc morton for empty partitions
-            if (m_nproc>1){
-
-                //Last desc
-                //Attention rank = 0 can't be empty
-                for (int p = 1; p < m_nproc; ++p){
-                    if (m_partitionRangeGlobalIdx[p] == m_partitionRangeGlobalIdx[p-1]){
-                        m_partitionLastDesc[p] = m_partitionLastDesc[p-1];
-                        if (m_rank == p){
-                            m_octree.m_lastDescMorton = m_partitionLastDesc[p-1];
-                        }
-                    }
-                }
-
-                //first desc
-                //attention! Last desc of last rank (if empty partition) is the maximum uint64_t
-                int pp = m_nproc-1;
-                if (m_partitionRangeGlobalIdx[pp] == m_partitionRangeGlobalIdx[pp-1]){
-                    m_partitionFirstDesc[pp] = std::numeric_limits<uint64_t>::max();
-                    if (m_rank == pp){
-                        m_octree.m_firstDescMorton = std::numeric_limits<uint64_t>::max();
-                    }
-                }
-                for (int p = pp-1; p > 0; --p){
-                    if (m_partitionRangeGlobalIdx[p] == m_partitionRangeGlobalIdx[p-1]){
-                        m_partitionFirstDesc[p] = m_partitionFirstDesc[p+1];
-                        if (m_rank == p){
-                            m_octree.m_firstDescMorton = m_partitionFirstDesc[p+1];
-                        }
-                    }
-                }
-            }//end if nprocs>1
+        if(!m_serial){
+            updateGlobalFirstDescMorton();
+            updateGlobalLasttDescMorton();
         }
 #endif
     }

@@ -2,7 +2,7 @@
 #
 #  bitpit
 #
-#  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+#  Copyright (C) 2015-2021 OPTIMAD engineering Srl
 #
 #  -------------------------------------------------------------------------
 #  License
@@ -42,6 +42,7 @@ if (ENABLE_MPI)
 	list(APPEND TESTS "test_PABLO_parallel_00003")
 	list(APPEND TESTS "test_PABLO_parallel_00004")
 	list(APPEND TESTS "test_PABLO_parallel_00005:4")
+	list(APPEND TESTS "test_PABLO_parallel_00006:2")
 endif()
 
 # Test extra libraries

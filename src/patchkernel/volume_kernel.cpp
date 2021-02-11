@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -36,29 +36,88 @@ namespace bitpit {
 	VolumeKernel is the base class for defining voulme patches.
 */
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+	\param expert if true, the expert mode will be enabled
+*/
+VolumeKernel::VolumeKernel(MPI_Comm communicator, std::size_t haloSize, bool expert)
+	: PatchKernel(communicator, haloSize, expert)
+#else
+/*!
+	Creates a patch.
 
 	\param expert if true, the expert mode will be enabled
 */
 VolumeKernel::VolumeKernel(bool expert)
 	: PatchKernel(expert)
+#endif
 {
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param dimension is the dimension of the patch
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+	\param expert if true, the expert mode will be enabled
+*/
+VolumeKernel::VolumeKernel(int dimension, MPI_Comm communicator, std::size_t haloSize, bool expert)
+	: PatchKernel(dimension, communicator, haloSize, expert)
+#else
+/*!
+	Creates a patch.
 
 	\param dimension is the dimension of the patch
 	\param expert if true, the expert mode will be enabled
 */
 VolumeKernel::VolumeKernel(int dimension, bool expert)
 	: PatchKernel(dimension, expert)
+#endif
 {
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param id is the id that will be assigned to the patch
+	\param dimension is the dimension of the patch
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+	\param expert if true, the expert mode will be enabled
+*/
+VolumeKernel::VolumeKernel(int id, int dimension, MPI_Comm communicator, std::size_t haloSize, bool expert)
+	: PatchKernel(id, dimension, communicator, haloSize, expert)
+#else
+/*!
+	Creates a patch.
 
 	\param id is the id that will be assigned to the patch
 	\param dimension is the dimension of the patch
@@ -66,6 +125,7 @@ VolumeKernel::VolumeKernel(int dimension, bool expert)
 */
 VolumeKernel::VolumeKernel(int id, int dimension, bool expert)
 	: PatchKernel(id, dimension, expert)
+#endif
 {
 }
 

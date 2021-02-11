@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -50,17 +50,14 @@ int subtest_001(int rank, int nProcs)
     double dh = length/100;
 
     /**<Create the patch.*/ 
+#if BITPIT_ENABLE_MPI
+    VolumeKernel * mesh = new VolOctree(2, origin, length, dh, MPI_COMM_NULL);
+#else
     VolumeKernel * mesh = new VolOctree(2, origin, length, dh);
-#if BITPIT_ENABLE_MPI    
-    mesh->setCommunicator(MPI_COMM_WORLD);
 #endif
     mesh->initializeAdjacencies();
     mesh->initializeInterfaces();
     mesh->update();
-
-#if BITPIT_ENABLE_MPI
-    mesh->partition(true);
-#endif 
 
     int archiveVersion = 1;
     int dumpBlock = (nProcs > 1) ? rank : -1;

@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -206,11 +206,11 @@ void FlatVector2D<T>::initialize(std::size_t nVectors, const std::size_t *sizes,
 /*!
     Initializes the container.
 
+    \param nVectors is the number of vectors
     \param sizes are the sizes of the vectors
     \param sizesStride is the stride for accessing the sizes
-    \param value are the values of each vector
-    \param sizesStride is the stride for accessing the values
-
+    \param values are the values of each vector
+    \param valuesStride is the stride for accessing the values
 */
 template <class T>
 void FlatVector2D<T>::initialize(std::size_t nVectors,
@@ -1100,7 +1100,7 @@ T* FlatVector2D<T>::operator[](std::size_t i)
 template <class T>
 bool FlatVector2D<T>::isIndexValid(std::size_t i) const
 {
-    return (i >= 0 && i < size());
+    return (i < size());
 }
 
 /*!
@@ -1117,7 +1117,7 @@ bool FlatVector2D<T>::isIndexValid(std::size_t i, std::size_t j) const
         return false;
     }
 
-    return (j >= 0 && j < (m_index[i+1] - m_index[i]));
+    return (j < (m_index[i+1] - m_index[i]));
 }
 
 }

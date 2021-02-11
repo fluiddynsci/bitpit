@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -45,9 +45,15 @@ public:
         virtual std::array<double,3> evalInterfaceNormal(long id)const = 0;
 
 protected:
-	VolumeKernel(bool epxert);
-	VolumeKernel(int dimension, bool epxert);
-	VolumeKernel(int id, int dimension, bool epxert);
+#if BITPIT_ENABLE_MPI==1
+	VolumeKernel(MPI_Comm communicator, std::size_t haloSize, bool expert);
+	VolumeKernel(int dimension, MPI_Comm communicator, std::size_t haloSize, bool expert);
+	VolumeKernel(int id, int dimension, MPI_Comm communicator, std::size_t haloSize, bool expert);
+#else
+	VolumeKernel(bool expert);
+	VolumeKernel(int dimension, bool expert);
+	VolumeKernel(int id, int dimension, bool expert);
+#endif
 
 };
 

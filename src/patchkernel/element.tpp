@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -43,7 +43,6 @@ namespace bitpit {
 
 	\param element is a reference to the element the owns the edge
 	\param connectivity is the the connectivity of the edge
-	\param edge if the local index of the edge
 	\param winding is the winding order of the vertices
 */
 template<class DerivedElement>

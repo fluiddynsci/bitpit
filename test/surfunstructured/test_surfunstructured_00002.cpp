@@ -7,7 +7,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -88,7 +88,11 @@ int subtest_001(
 
 // Local variables
 long                            id;
+#if BITPIT_ENABLE_MPI
+SurfUnstructured                mesh(2, 3, MPI_COMM_NULL);
+#else
 SurfUnstructured                mesh(2, 3);
+#endif
 
 // Counters
 // none

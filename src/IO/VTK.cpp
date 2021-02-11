@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -1199,7 +1199,9 @@ void VTK::readDataHeader( std::fstream &str ){
 
     // Disable all unused fields
     for (const std::string &fieldname : unusedFields) {
-        _findData(fieldname)->disable();
+        VTKField *field = _findData(fieldname);
+        assert(field);
+        field->disable();
     }
 }
 

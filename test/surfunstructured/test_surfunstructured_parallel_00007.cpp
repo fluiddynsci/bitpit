@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2020 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -48,10 +48,7 @@ int subtest_001()
     log::cout() << std::endl;
     log::cout() << "Importing STL..." << std::endl;
 
-    std::unique_ptr<SurfUnstructured> surfaceMesh(new SurfUnstructured (2, 3));
-
-    // Set communicator ----------------------------------------------------- //
-    surfaceMesh->setCommunicator(MPI_COMM_WORLD);
+    std::unique_ptr<SurfUnstructured> surfaceMesh(new SurfUnstructured(2, 3, MPI_COMM_WORLD));
 
     int myRank = surfaceMesh->getRank();
 
@@ -60,7 +57,7 @@ int subtest_001()
         surfaceMesh->importSTL("./data/buddha.stl");
         surfaceMesh->deleteCoincidentVertices();
     }
-    surfaceMesh->buildAdjacencies();
+    surfaceMesh->initializeAdjacencies();
     surfaceMesh->getVTK().setName("skd_test_STL");
     surfaceMesh->write();
 
@@ -280,10 +277,7 @@ int subtest_002()
     log::cout() << std::endl;
     log::cout() << "Importing STL..." << std::endl;
 
-    std::unique_ptr<SurfUnstructured> surfaceMesh(new SurfUnstructured (2, 3));
-
-    // Set communicator ----------------------------------------------------- //
-    surfaceMesh->setCommunicator(MPI_COMM_WORLD);
+    std::unique_ptr<SurfUnstructured> surfaceMesh(new SurfUnstructured(2, 3, MPI_COMM_WORLD));
 
     int myRank = surfaceMesh->getRank();
 
@@ -292,7 +286,7 @@ int subtest_002()
         surfaceMesh->importSTL("./data/buddha.stl");
         surfaceMesh->deleteCoincidentVertices();
     }
-    surfaceMesh->buildAdjacencies();
+    surfaceMesh->initializeAdjacencies();
     surfaceMesh->getVTK().setName("skd_test_STL");
     surfaceMesh->write();
 

@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -493,7 +493,7 @@ void SystemSolver::assembly(const SystemMatrixAssembler &assembler)
  * Assembly the system.
  *
  * \param communicator is the MPI communicator
- * \param partitioned controls if the system is partitioned
+ * \param isPartitioned controls if the system is partitioned
  * \param assembler is the matrix assembler
  */
 void SystemSolver::assembly(MPI_Comm communicator, bool isPartitioned, const SystemMatrixAssembler &assembler)

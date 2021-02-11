@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -201,7 +201,11 @@ int subtest_001()
 	long counter;
 
 	// Local variables
+#if BITPIT_ENABLE_MPI
+	SurfUnstructured                        mesh(2, 3, MPI_COMM_NULL);
+#else
 	SurfUnstructured                        mesh(2, 3);
+#endif
 	mesh.setExpert(true);
 
 	// Generate a Dummy Triangulation

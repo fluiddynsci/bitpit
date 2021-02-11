@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -93,7 +93,11 @@ int subtest_001()
     int dimensions(2) ;
 
     // Input geometry
+#if BITPIT_ENABLE_MPI
+    std::unique_ptr<bitpit::SurfUnstructured> STL( new bitpit::SurfUnstructured(0,1,dimensions,MPI_COMM_NULL) );
+#else
     std::unique_ptr<bitpit::SurfUnstructured> STL( new bitpit::SurfUnstructured(0,1,dimensions) );
+#endif
 
     bitpit::log::cout() << " - Loading dgf geometry" << std::endl;
 

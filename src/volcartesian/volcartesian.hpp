@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -68,8 +68,6 @@ public:
 
 	void resetInterfaces() override;
 
-	void setDiscretization(const std::array<int, 3> &nCells);
-
 	long getVertexCount() const override;
 	int getVertexCount(int direction) const;
 
@@ -83,12 +81,16 @@ public:
 	ElementType getInterfaceType() const;
 	ElementType getInterfaceType(long id) const override;
 
-	std::array<double, 3> evalVertexCoords(long id);
+	std::array<double, 3> evalVertexCoords(long id) const;
+	std::array<double, 3> evalVertexCoords(const std::array<int, 3> &ijk) const;
 	const std::vector<double> & getVertexCoords(int direction) const;
 
 	double evalCellVolume(long id) const override;
+	double evalCellVolume(const std::array<int, 3> &ijk) const;
 	double evalCellSize(long id) const override;
+	double evalCellSize(const std::array<int, 3> &ijk) const;
 	std::array<double, 3> evalCellCentroid(long id) const override;
+	std::array<double, 3> evalCellCentroid(const std::array<int, 3> &ijk) const;
 	const std::vector<double> & getCellCentroids(int direction) const;
 
 	double evalInterfaceArea(long id) const override;
@@ -110,10 +112,10 @@ public:
 	std::array<int, 3> locateClosestCellCartesian(std::array<double,3> const &point) const;
 
 	std::vector<long> extractCellSubSet(std::array<int, 3> const &ijkMin, std::array<int, 3> const &ijkMax);
-	std::vector<long> extractCellSubSet(int idxMin, int idxMax);
+	std::vector<long> extractCellSubSet(int idMin, int idMax);
 	std::vector<long> extractCellSubSet(std::array<double, 3> const &pointMin, std::array<double, 3> const &pointMax);
 	std::vector<long> extractVertexSubSet(std::array<int, 3> const &ijkMin, std::array<int, 3> const &ijkMax);
-	std::vector<long> extractVertexSubSet(int idxMin, int idxMax);
+	std::vector<long> extractVertexSubSet(int idMin, int idMax);
 	std::vector<long> extractVertexSubSet(std::array<double, 3> const &pointMin, std::array<double, 3> const &pointMax);
 
 	std::array<double, 3> getOrigin() const;
@@ -131,12 +133,12 @@ public:
 
 	long getCellLinearId(int i, int j, int k) const;
 	long getCellLinearId(const std::array<int, 3> &ijk) const;
-	std::array<int, 3> getCellCartesianId(long idx) const;
+	std::array<int, 3> getCellCartesianId(long id) const;
 	bool isCellCartesianIdValid(const std::array<int, 3> &ijk) const;
 	long getVertexLinearId(int i, int j, int k) const;
 	long getVertexLinearId(const std::array<int, 3> &ijk) const;
-	std::array<int, 3> getVertexCartesianId(long idx) const;
-	std::array<int, 3> getVertexCartesianId(long cellIdx, int vertex) const;
+	std::array<int, 3> getVertexCartesianId(long id) const;
+	std::array<int, 3> getVertexCartesianId(long cellId, int vertex) const;
 	std::array<int, 3> getVertexCartesianId(const std::array<int, 3> &cellIjk, int vertex) const;
 	bool isVertexCartesianIdValid(const std::array<int, 3> &ijk) const;
 
@@ -162,6 +164,8 @@ private:
 	std::array<double, 3> m_minCoords;
 	std::array<double, 3> m_maxCoords;
 
+	std::array<double, 3> m_directionOrdering;
+
 	std::array<std::vector<double>, 3> m_vertexCoords;
 	std::array<std::vector<double>, 3> m_cellCenters;
 
@@ -184,6 +188,8 @@ private:
 	void initializeInterfaceArea();
 	void initializeCellVolume();
 
+	void setDiscretization(const std::array<int, 3> &nCells);
+
 	void setMemoryMode(MemoryMode mode);
 
 	void addVertices();
@@ -193,6 +199,9 @@ private:
 	void addInterfaces();
 	std::array<int, 3> getInterfaceCountDirection(int direction);
 	void addInterfacesDirection(int direction);
+
+	double evalCellVolume() const;
+	double evalCellSize() const;
 
 };
 

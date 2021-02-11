@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -59,7 +59,11 @@ int subtest_001(
 ) {
 
     // Create the mesh
+#if BITPIT_ENABLE_MPI
+    SurfUnstructured *mesh = new SurfUnstructured(2, 3, MPI_COMM_NULL);
+#else
     SurfUnstructured *mesh = new SurfUnstructured(2, 3);
+#endif
     mesh->setExpert(true);
 
     std::vector<array<double,3>> verts(5);

@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -38,35 +38,76 @@ namespace bitpit {
 	SurfUnstructured defines an unstructured surface triangulation.
 */
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates an uninitialized patch.
+	Creates an uninitialized partitioned patch.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param communicator is the communicator to be used for exchanging data
+	among the processes
+*/
+SurfUnstructured::SurfUnstructured(MPI_Comm communicator)
+	: SurfaceKernel(communicator, 1, true)
+#else
+/*!
+	Creates an uninitialized serial patch.
 */
 SurfUnstructured::SurfUnstructured()
 	: SurfaceKernel(true)
-{
-#if BITPIT_ENABLE_MPI==1
-	// This patch supports partitioning
-	setPartitioningStatus(PARTITIONING_CLEAN);
 #endif
+{
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param patch_dim is the dimension of the patch
+	\param space_dim is the dimension of the space
+	\param communicator is the communicator to be used for exchanging data
+	among the processes
+*/
+SurfUnstructured::SurfUnstructured(int patch_dim, int space_dim, MPI_Comm communicator)
+	: SurfaceKernel(PatchManager::AUTOMATIC_ID, patch_dim, space_dim, communicator, 1, true)
+#else
+/*!
+	Creates a patch.
 
 	\param patch_dim is the dimension of the patch
 	\param space_dim is the dimension of the space
 */
 SurfUnstructured::SurfUnstructured(int patch_dim, int space_dim)
 	: SurfaceKernel(PatchManager::AUTOMATIC_ID, patch_dim, space_dim, true)
-{
-#if BITPIT_ENABLE_MPI==1
-	// This patch supports partitioning
-	setPartitioningStatus(PARTITIONING_CLEAN);
 #endif
+{
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param id is the id of the patch
+	\param patch_dim is the dimension of the patch
+	\param space_dim is the dimension of the space
+	\param communicator is the communicator to be used for exchanging data
+	among the processes
+*/
+SurfUnstructured::SurfUnstructured(int id, int patch_dim, int space_dim, MPI_Comm communicator)
+	: SurfaceKernel(id, patch_dim, space_dim, communicator, 1, true)
+#else
+/*!
+	Creates a patch.
 
 	\param id is the id of the patch
 	\param patch_dim is the dimension of the patch
@@ -74,26 +115,33 @@ SurfUnstructured::SurfUnstructured(int patch_dim, int space_dim)
 */
 SurfUnstructured::SurfUnstructured(int id, int patch_dim, int space_dim)
 	: SurfaceKernel(id, patch_dim, space_dim, true)
-{
-#if BITPIT_ENABLE_MPI==1
-	// This patch supports partitioning
-	setPartitioningStatus(PARTITIONING_CLEAN);
 #endif
+{
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch restoring the patch saved in the specified stream.
+	Creates a patch restoring the patch saved in the specified stream.
+
+	The number of processes in the communicator should be equal to the number
+	of processes of the communicator used when dumping the patch.
+
+	\param stream is the stream to read from
+	\param communicator is the communicator to be used for exchanging data
+	among the processes
+*/
+SurfUnstructured::SurfUnstructured(std::istream &stream, MPI_Comm communicator)
+	: SurfaceKernel(communicator, 1, false)
+#else
+/*!
+	Creates a patch restoring the patch saved in the specified stream.
 
 	\param stream is the stream to read from
 */
 SurfUnstructured::SurfUnstructured(std::istream &stream)
 	: SurfaceKernel(false)
-{
-#if BITPIT_ENABLE_MPI==1
-	// This patch supports partitioning
-	setPartitioningStatus(PARTITIONING_CLEAN);
 #endif
-
+{
 	// Restore the patch
 	restore(stream);
 }

@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -55,20 +55,48 @@ namespace bitpit {
 	OctantInfoHasher allows to generate a hash for the OctantInfo structure.
 */
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates an uninitialized patch.
+	Creates an uninitialized partitioned patch.
+
+	Cells will be initialized the cells only on the process identified by the
+	rank zero in the communicator.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+*/
+VolOctree::VolOctree(MPI_Comm communicator, std::size_t haloSize)
+	: VolumeKernel(communicator, haloSize, false)
+#else
+/*!
+	Creates an uninitialized serial patch.
 */
 VolOctree::VolOctree()
 	: VolumeKernel(false)
+#endif
 {
 	// Create the tree
 #if BITPIT_ENABLE_MPI==1
-	m_tree = std::unique_ptr<PabloUniform>(new PabloUniform(PabloUniform::DEFAULT_LOG_FILE, MPI_COMM_NULL));
+	m_tree = std::unique_ptr<PabloUniform>(new PabloUniform(PabloUniform::DEFAULT_LOG_FILE, communicator));
 #else
 	m_tree = std::unique_ptr<PabloUniform>(new PabloUniform(PabloUniform::DEFAULT_LOG_FILE));
 #endif
 
-	// Initialize
+	// Initialize the tree
+#if BITPIT_ENABLE_MPI==1
+	initializeTree(nullptr, haloSize);
+#else
+	initializeTree(nullptr);
+#endif
+
+	// Initialize the patch
 	initialize();
 
 	// Reset
@@ -79,8 +107,32 @@ VolOctree::VolOctree()
 	__reset(false);
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	Cells will be initialized the cells only on the process identified by the
+	rank zero in the communicator.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param dimension is the dimension of the patch
+	\param origin is the origin of the domain
+	\param length is the length of the domain
+	\param dh is the maximum allowed cell size of the initial refinement
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+*/
+VolOctree::VolOctree(int dimension, const std::array<double, 3> &origin, double length, double dh, MPI_Comm communicator, std::size_t haloSize)
+	: VolOctree(PatchManager::AUTOMATIC_ID, dimension, origin, length, dh, communicator, haloSize)
+#else
+/*!
+	Creates a patch.
 
 	\param dimension is the dimension of the patch
 	\param origin is the origin of the domain
@@ -89,11 +141,37 @@ VolOctree::VolOctree()
 */
 VolOctree::VolOctree(int dimension, const std::array<double, 3> &origin, double length, double dh)
 	: VolOctree(PatchManager::AUTOMATIC_ID, dimension, origin, length, dh)
+#endif
 {
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	Cells will be initialized the cells only on the process identified by the
+	rank zero in the communicator.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param id is the id that will be assigned to the patch
+	\param dimension is the dimension of the patch
+	\param origin is the origin of the domain
+	\param length is the length of the domain
+	\param dh is the maximum allowed cell size of the initial refinement
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+*/
+VolOctree::VolOctree(int id, int dimension, const std::array<double, 3> &origin, double length, double dh, MPI_Comm communicator, std::size_t haloSize)
+	: VolumeKernel(id, dimension, communicator, haloSize, false)
+#else
+/*!
+	Creates a patch.
 
 	\param id is the id that will be assigned to the patch
 	\param dimension is the dimension of the patch
@@ -103,19 +181,27 @@ VolOctree::VolOctree(int dimension, const std::array<double, 3> &origin, double 
 */
 VolOctree::VolOctree(int id, int dimension, const std::array<double, 3> &origin, double length, double dh)
 	: VolumeKernel(id, dimension, false)
+#endif
 {
 	// Create the tree
 #if BITPIT_ENABLE_MPI==1
 	m_tree = std::unique_ptr<PabloUniform>(
 	    new PabloUniform(origin[0], origin[1], origin[2], length, dimension,
-	                     PabloUniform::DEFAULT_LOG_FILE, MPI_COMM_NULL));
+	                     PabloUniform::DEFAULT_LOG_FILE, communicator));
 #else
 	m_tree = std::unique_ptr<PabloUniform>(
 	    new PabloUniform(origin[0], origin[1], origin[2], length, dimension,
 	                     PabloUniform::DEFAULT_LOG_FILE));
 #endif
 
-	// Initialize
+	// Initialize the tree
+#if BITPIT_ENABLE_MPI==1
+	initializeTree(nullptr, haloSize);
+#else
+	initializeTree(nullptr);
+#endif
+
+	// Initialize the patch
 	initialize();
 
 	// Reset
@@ -135,15 +221,62 @@ VolOctree::VolOctree(int id, int dimension, const std::array<double, 3> &origin,
 	// Set the bounding
 	setBoundingBox();
 
-	// Inizializzazione dell'octree
-	double initial_level = ceil(log2(std::max(1., length / dh)));
+	// Initialize refinement markers
+	if (m_tree->getNumOctants() > 0) {
+		double initial_level = ceil(log2(std::max(1., length / dh)));
+		m_tree->setMarker((uint32_t) 0, initial_level);
+	}
+}
 
-	m_tree->setMarker((uint32_t) 0, initial_level);
+#if BITPIT_ENABLE_MPI==1
+/*!
+	Creates a patch restoring the patch saved in the specified stream.
+
+	The number of processes in the communicator should be equal to the number
+	of processes of the communicator used when dumping the patch.
+
+	\param stream is the stream to read from
+	\param communicator is the communicator to be used for exchanging data
+	among the processes
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+*/
+VolOctree::VolOctree(std::istream &stream, MPI_Comm communicator, std::size_t haloSize)
+	: VolumeKernel(communicator, haloSize, false)
+#else
+/*!
+	Creates a patch restoring the patch saved in the specified stream.
+
+	\param stream is the stream to read from
+*/
+VolOctree::VolOctree(std::istream &stream)
+	: VolumeKernel(false)
+#endif
+{
+	// Initialize the tree
+#if BITPIT_ENABLE_MPI==1
+	initializeTree(nullptr, haloSize);
+#else
+	initializeTree(nullptr);
+#endif
+
+	// Initialize the patch
+	initialize();
+
+	// Restore the patch
+	restore(stream);
 }
 
 /*!
-	Creates a new patch.
-
+	Creates a patch.
+*/
+#if BITPIT_ENABLE_MPI==1
+/*!
+	If the tree provides a valid communicator the patch will be considered
+	partitioned, otherwise the patch will be serial.
+*/
+#endif
+/*!
 	\param tree is the tree that will be used
 	\param adopter is a pointer to the tree adopter
 */
@@ -153,20 +286,41 @@ VolOctree::VolOctree(std::unique_ptr<PabloUniform> &&tree, std::unique_ptr<Pablo
 }
 
 /*!
-	Creates a new patch.
+	Creates a paritioned patch.
 
+	Cells will be initialized the cells only on the process identified by the
+	rank zero in the communicator.
+*/
+#if BITPIT_ENABLE_MPI==1
+/*!
+	If the tree provides a valid communicator the patch will be considered
+	partitioned, otherwise the patch will be serial.
+*/
+#endif
+/*!
 	\param id is the id that will be assigned to the patch
 	\param tree is the tree that will be used
 	\param adopter is a pointer to the tree adopter
 */
 VolOctree::VolOctree(int id, std::unique_ptr<PabloUniform> &&tree, std::unique_ptr<PabloUniform> *adopter)
+#if BITPIT_ENABLE_MPI==1
+	: VolumeKernel(id, tree->getDim(), tree->getComm(), tree->getNofGhostLayers(), false)
+#else
 	: VolumeKernel(id, tree->getDim(), false)
+#endif
 {
 	// Associate the tree
 	assert(tree);
 	m_tree.swap(tree);
 
-	// Initialize
+	// Initialize the tree
+#if BITPIT_ENABLE_MPI==1
+	initializeTree(adopter, m_tree->getNofGhostLayers());
+#else
+	initializeTree(adopter);
+#endif
+
+	// Initialize the patch
 	initialize();
 
 	// Reset
@@ -182,29 +336,6 @@ VolOctree::VolOctree(int id, std::unique_ptr<PabloUniform> &&tree, std::unique_p
 	// from the constructor of the patch kernel only the base function is
 	// called.
 	__setDimension(m_tree->getDim());
-
-#if BITPIT_ENABLE_MPI==1
-	// Set the communicator
-	PatchKernel::setCommunicator(m_tree->getComm());
-
-	// Set the partitioned flag
-	setPartitioned(!m_tree->getSerial());
-#endif
-
-	// Set the aopter
-	setTreeAdopter(adopter);
-}
-
-/*!
-	Creates a new patch restoring the patch saved in the specified stream.
-
-	\param stream is the stream to read from
-*/
-VolOctree::VolOctree(std::istream &stream)
-	: VolumeKernel(false)
-{
-	initialize();
-	restore(stream);
 }
 
 /*!
@@ -287,6 +418,45 @@ void VolOctree::__reset(bool resetTree)
 }
 
 /*!
+	Initialize the tree and prepare it to be used with the patch.
+
+	\param adopter is a pointer to the tree adopter
+*/
+#if BITPIT_ENABLE_MPI==1
+/*!
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+*/
+void VolOctree::initializeTree(std::unique_ptr<PabloUniform> *adopter, std::size_t haloSize)
+#else
+void VolOctree::initializeTree(std::unique_ptr<PabloUniform> *adopter)
+#endif
+{
+#if BITPIT_ENABLE_MPI==1
+	// Initialize partitioning
+    if (isCommunicatorSet()) {
+		if (!m_tree->getParallel()) {
+			// Initialize halo size
+			if (haloSize != m_tree->getNofGhostLayers()) {
+				initializeTreeHaloSize(haloSize);
+			}
+
+			// Initialize partitioning
+			initializeTreePartitioning();
+		} else {
+			// Check if the current halo size is equal to the requested one
+			if (haloSize != m_tree->getNofGhostLayers()) {
+				throw std::runtime_error ("Unable to set the requested halo size.");
+			}
+		}
+	}
+#endif
+
+	// Set tree adopter
+	setTreeAdopter(adopter);
+}
+
+/*!
 	Initialize the data structures of the patch.
 */
 void VolOctree::initialize()
@@ -297,19 +467,11 @@ void VolOctree::initialize()
 	m_cellTypeInfo      = nullptr;
 	m_interfaceTypeInfo = nullptr;
 
-	// Reset the tree entruster
-	m_treeAdopter = nullptr;
-
 	// This patch need to be spawn
 	setSpawnStatus(SPAWN_NEEDED);
 
 	// This patch supports adaption
 	setAdaptionStatus(ADAPTION_CLEAN);
-
-#if BITPIT_ENABLE_MPI==1
-	// This patch supports partitioning
-	setPartitioningStatus(PARTITIONING_CLEAN);
-#endif
 
 	// Initialize the tolerance
 	//
@@ -1103,8 +1265,8 @@ std::vector<adaption::Info> VolOctree::sync(bool trackChanges)
 		// The adaption info associated to the octants that has been received
 		// from external partitions will contain the current octants sorted by
 		// their tree id (we are looping over the octants in that order), this
-		// is the same order that will be used on the processor that has sent
-		// the octants. Since the order is the same, the two processors are able
+		// is the same order that will be used on the process that has sent
+		// the octants. Since the order is the same, the two processes are able
 		// to exchange cell data without any additional extra communication
 		// (they already know the list of cells for which data is needed and
 		// the order in which these data will be sent).
@@ -1141,10 +1303,10 @@ std::vector<adaption::Info> VolOctree::sync(bool trackChanges)
 
 			// Previous cells
 			//
-			// A coarsening can merge togheter cells of different processors.
+			// A coarsening can merge togheter cells of different processes.
 			// However, since the coarsening is limited to one level, the
 			// previous cells will always be internal or among the ghost of
-			// the current processor.
+			// the current process.
 			int nPreviousCellIds = mapper_octantMap.size();
 			adaptionInfo.previous.reserve(nPreviousCellIds);
 			for (int k = 0; k < nPreviousCellIds; ++k) {
@@ -1181,7 +1343,7 @@ std::vector<adaption::Info> VolOctree::sync(bool trackChanges)
 	// Remove octants that are no more in the tree
 	if (!importFromScratch) {
 #if BITPIT_ENABLE_MPI==1
-		// Cells that have been send to other processors need to be removed
+		// Cells that have been send to other processes need to be removed
 		PabloUniform::LoadBalanceRanges loadBalanceRanges = m_tree->getLoadBalanceRanges();
 		for (const auto &rankEntry : loadBalanceRanges.sendRanges) {
 			int rank = rankEntry.first;
@@ -1218,8 +1380,8 @@ std::vector<adaption::Info> VolOctree::sync(bool trackChanges)
 
 		// Remove unmapped octants
 		//
-		// A coarsening that merges cells from different processors, can leave, on
-		// the processors which own the ghost octants involved in the coarsening,
+		// A coarsening that merges cells from different processes, can leave, on
+		// the processes which own the ghost octants involved in the coarsening,
 		// some octants that are not mapped.
 		for (uint32_t previousTreeId = 0; previousTreeId < nPreviousOctants; ++previousTreeId) {
 			if (unmappedOctants[previousTreeId]) {
@@ -1246,9 +1408,9 @@ std::vector<adaption::Info> VolOctree::sync(bool trackChanges)
 		// The adaption info associated to the octants that has been sent
 		// to external partitions will contain the current octants sorted by
 		// their tree id (they were added to the deleted octants list in that
-		// order), this is the same order that will be used on the processor
+		// order), this is the same order that will be used on the process
 		// that has received the octants. Since the order is the same, the two
-		// processors are able to exchange cell data without any additional
+		// processes are able to exchange cell data without any additional
 		// extra communication (they already know the list of cells for which
 		// data is needed and the order in which these data will be sent).
 		if (trackChanges) {

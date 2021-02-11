@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -39,10 +39,17 @@ public:
     using PatchKernel::locatePoint;
 
     // Constructors
+#if BITPIT_ENABLE_MPI==1
+    SurfUnstructured(MPI_Comm communicator);
+    SurfUnstructured(int patch_dim, int space_dim, MPI_Comm communicator);
+    SurfUnstructured(int id, int patch_dim, int space_dim, MPI_Comm communicator);
+    SurfUnstructured(std::istream &stream, MPI_Comm communicator);
+#else
     SurfUnstructured();
     SurfUnstructured(int patch_dim, int space_dim);
     SurfUnstructured(int id, int patch_dim, int space_dim);
     SurfUnstructured(std::istream &stream);
+#endif
 
     // Clone
     std::unique_ptr<PatchKernel> clone() const override;

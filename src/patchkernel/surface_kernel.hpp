@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -79,10 +79,16 @@ private:
 protected:
         int                     m_spaceDim;
 
-	SurfaceKernel(bool expert);
-	SurfaceKernel(int patch_dim, int space_dim, bool expert);
-	SurfaceKernel(int id, int patch_dim, int space_dim, bool expert);
-        
+#if BITPIT_ENABLE_MPI==1
+        SurfaceKernel(MPI_Comm communicator, std::size_t haloSize, bool expert);
+        SurfaceKernel(int patch_dim, int space_dim, MPI_Comm communicator, std::size_t haloSize, bool expert);
+        SurfaceKernel(int id, int patch_dim, int space_dim, MPI_Comm communicator, std::size_t haloSize, bool expert);
+#else
+        SurfaceKernel(bool expert);
+        SurfaceKernel(int patch_dim, int space_dim, bool expert);
+        SurfaceKernel(int id, int patch_dim, int space_dim, bool expert);
+#endif
+
 };
 
 }

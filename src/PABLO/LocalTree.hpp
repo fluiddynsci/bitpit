@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -54,7 +54,7 @@ typedef std::vector<Intersection>	 	intervector;
  *	\date		15/dec/2015
  *	\authors	Edoardo Lombardi
  *	\authors	Marco Cisternino
- *	\copyright		Copyright (C) 2015-2019 OPTIMAD engineering srl. All rights reserved.
+ *	\copyright		Copyright (C) 2015-2021 OPTIMAD engineering srl. All rights reserved.
  *
  *	\brief Local octree portion for each process
  *
@@ -125,7 +125,7 @@ private:
 	uint64_t			 	m_lastDescMorton;		/**< Morton number of last (Morton order) most refined octant possible in local partition */
 	uint32_t 				m_sizeGhosts;			/**< Size of vector of ghost octants */
 	uint32_t 				m_sizeOctants;			/**< Size of vector of local octants */
-	uint8_t					m_localMaxDepth;		/**< Reached max depth in local tree */
+	int8_t					m_localMaxDepth;		/**< Reached max depth in local tree */
 	uint8_t 				m_balanceCodim;			/**<Maximum codimension of the entity for 2:1 balancing (1 = 2:1 balance through faces (default);
 	 	 	 	 	 	 	 	 	 	 	 	 	 	 2 = 2:1 balance through edges and faces;
 	 	 	 	 	 	 	 	 	 	 	 	 	 	 3 = 2:1 balance through nodes, edges and faces)*/
@@ -162,7 +162,7 @@ private:
 	uint64_t		getLastDescMorton() const;
 	uint32_t 		getNumGhosts() const;
 	uint32_t 		getNumOctants() const;
-	uint8_t 		getLocalMaxDepth() const;
+	int8_t 			getLocalMaxDepth() const;
 	int8_t 			getMarker(int32_t idx) const;
 	uint8_t 		getLevel(int32_t idx) const;
 	uint64_t 		computeMorton(int32_t idx) const;
@@ -207,11 +207,6 @@ private:
 	void 		checkCoarse(uint64_t partLastDesc, u32vector & mapidx);
 	void 		updateLocalMaxDepth();
 
-    
-    void        findNeighbours(const Octant* oct, bool haveIidx, uint32_t idx, uint8_t iface, u32vector & neighbours, bvector & isghost, bool onlyinternal) const;
-    void        findEdgeNeighbours(const Octant* oct, bool haveIidx, uint32_t idx, uint8_t iedge, u32vector & neighbours, bvector & isghost, bool onlyinternal) const;
-    void        findNodeNeighbours(const Octant* oct, bool haveIidx, uint32_t idx, uint8_t inode, u32vector & neighbours, bvector & isghost, bool onlyinternal) const;
-
     void        findNeighbours(uint32_t idx, bool amIghost, uint8_t iface, u32vector & neighbours, bvector & isghost, bool onlyinternal) const;
     void        findEdgeNeighbours(uint32_t idx, bool amIghost, uint8_t iedge, u32vector & neighbours, bvector & isghost, bool onlyinternal) const;
     void        findNodeNeighbours(uint32_t idx, bool amIghost, uint8_t inode, u32vector & neighbours, bvector & isghost, bool onlyinternal) const;
@@ -233,6 +228,7 @@ private:
 	void 		findGhostEdgeNeighbours(uint32_t idx, uint8_t iedge, u32vector & neighbours) const;
 	void 		findGhostNodeNeighbours(uint32_t idx, uint8_t inode, u32vector & neighbours) const;
 
+	void 		computeNeighSearchBegin(uint64_t sameSizeVirtualNeighMorton, const octvector &octants, uint32_t *searchBeginIdx, uint64_t *searchBeginMorton) const;
 
 	void 		preBalance21(bool internal);
 	void 		preBalance21(u32vector& newmodified);
@@ -240,9 +236,11 @@ private:
 
 	void 		computeIntersections();
 
-	uint32_t 	findMorton(uint64_t Morton) const;
-	uint32_t 	findGhostMorton(uint64_t Morton) const;
-	uint32_t 	_findMorton(uint64_t Morton, const octvector &octants) const;
+	uint32_t 	findMorton(uint64_t targetMorton) const;
+	uint32_t 	findGhostMorton(uint64_t targetMorton) const;
+	uint32_t 	findMorton(uint64_t targetMorton, const octvector &octants) const;
+	void 		findMortonLowerBound(uint64_t targetMorton, const octvector &octants, uint32_t *lowerBoundIdx, uint64_t *lowerBoundMorton) const;
+	void 		findMortonUpperBound(uint64_t targetMorton, const octvector &octants, uint32_t *upperBoundIdx, uint64_t *upperBoundMorton) const;
 
 	void 		computeConnectivity();
 	void 		clearConnectivity();

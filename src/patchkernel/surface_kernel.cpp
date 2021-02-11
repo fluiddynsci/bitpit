@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -57,19 +57,58 @@ const unsigned short SurfaceKernel::SELECT_TRIANGLE = 1;
 const unsigned short SurfaceKernel::SELECT_QUAD     = 2;
 const unsigned short SurfaceKernel::SELECT_ALL      = 3;
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+	\param expert if true, the expert mode will be enabled
+*/
+SurfaceKernel::SurfaceKernel(MPI_Comm communicator, std::size_t haloSize, bool expert)
+	: PatchKernel(communicator, haloSize, expert)
+#else
+/*!
+	Creates a patch.
 
 	\param expert if true, the expert mode will be enabled
 */
 SurfaceKernel::SurfaceKernel(bool expert)
 	: PatchKernel(expert)
+#endif
 {
 	initialize();
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param patch_dim is the dimension of the patch
+	\param space_dim is the dimension of the space
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+	\param expert if true, the expert mode will be enabled
+*/
+SurfaceKernel::SurfaceKernel(int patch_dim, int space_dim, MPI_Comm communicator, std::size_t haloSize, bool expert)
+	: PatchKernel(patch_dim, communicator, haloSize, expert)
+#else
+/*!
+	Creates a patch.
 
 	\param patch_dim is the dimension of the patch
 	\param space_dim is the dimension of the space
@@ -77,6 +116,7 @@ SurfaceKernel::SurfaceKernel(bool expert)
 */
 SurfaceKernel::SurfaceKernel(int patch_dim, int space_dim, bool expert)
 	: PatchKernel(patch_dim, expert)
+#endif
 {
     initialize();
 
@@ -84,8 +124,29 @@ SurfaceKernel::SurfaceKernel(int patch_dim, int space_dim, bool expert)
     setSpaceDimension(space_dim);
 }
 
+#if BITPIT_ENABLE_MPI==1
 /*!
-	Creates a new patch.
+	Creates a patch.
+
+	If a null comunicator is provided, a serial patch will be created, this
+	means that each processor will be unaware of the existence of the other
+	processes.
+
+	\param id is the id that will be assigned to the patch
+	\param patch_dim is the dimension of the patch
+	\param space_dim is the dimension of the space
+	\param communicator is the communicator to be used for exchanging data
+	among the processes. If a null comunicator is provided, a serial patch
+	will be created
+	\param haloSize is the size, expressed in number of layers, of the ghost
+	cells halo
+	\param expert if true, the expert mode will be enabled
+*/
+SurfaceKernel::SurfaceKernel(int id, int patch_dim, int space_dim, MPI_Comm communicator, std::size_t haloSize, bool expert)
+	: PatchKernel(id, patch_dim, communicator, haloSize, expert)
+#else
+/*!
+	Creates a patch.
 
 	\param id is the id that will be assigned to the patch
 	\param patch_dim is the dimension of the patch
@@ -94,6 +155,7 @@ SurfaceKernel::SurfaceKernel(int patch_dim, int space_dim, bool expert)
 */
 SurfaceKernel::SurfaceKernel(int id, int patch_dim, int space_dim, bool expert)
 	: PatchKernel(id, patch_dim, expert)
+#endif
 {
     m_spaceDim = space_dim;
 }

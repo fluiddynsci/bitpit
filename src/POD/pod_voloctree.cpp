@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -63,10 +63,11 @@ PODVolOctree::~PODVolOctree()
  */
 VolumeKernel* PODVolOctree::createMesh()
 {
-    VolumeKernel *mesh = new VolOctree();
-
+    VolumeKernel *mesh;
 #if BITPIT_ENABLE_MPI
-    mesh->setCommunicator(getCommunicator());
+    mesh = new VolOctree(getCommunicator());
+#else
+    mesh = new VolOctree();
 #endif
 
     return mesh;
@@ -76,7 +77,7 @@ VolumeKernel* PODVolOctree::createMesh()
  * Compute the mapping of an input mesh on the pod mesh.
  * \param[in] mesh Pointer to input mesh.
  * \param[in] fillInv If true even the inverse mapping is computed.
- * \param[out] mapper The mapping.
+ * \return The mapping.
  */
 VolumeMapper * PODVolOctree::_computeMapper(VolumeKernel* mesh, bool fillInv)
 {
@@ -799,7 +800,7 @@ PiercedStorage<double> PODVolOctree::mapFieldsToPOD(const PiercedStorage<double>
 /**
  * Map a storage of fields FROM the POD mesh.
  *
- * \param[out] field Output Fields storage
+ * \param[out] fields Output Fields storage
  * \param[in] mesh Pointer to input field mesh
  * \param[in] targetCells Pointer to set of target cells of input field mesh mesh (cells with mapped values as result)
  * \param[in]mappedFields  Fields storage on POD mesh to be mapped.

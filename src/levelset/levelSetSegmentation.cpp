@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -1031,7 +1031,7 @@ void LevelSetSegmentation::__clearAfterMeshAdaption( const std::vector<adaption:
             continue;
         }
 
-        // Delete only old data that belongs to the current processor
+        // Delete only old data that belongs to the current process
         if (info.type == adaption::Type::TYPE_PARTITION_RECV) {
             continue;
         }

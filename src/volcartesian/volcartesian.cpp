@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -24,6 +24,9 @@
 
 #include <cmath>
 #include <bitset>
+#if BITPIT_ENABLE_MPI==1
+#	include <mpi.h>
+#endif
 
 #include "bitpit_common.hpp"
 
@@ -61,13 +64,17 @@ namespace bitpit {
 	Creates an uninitialized patch.
 */
 VolCartesian::VolCartesian()
+#if BITPIT_ENABLE_MPI==1
+	: VolumeKernel(MPI_COMM_NULL, 0, false)
+#else
 	: VolumeKernel(false)
+#endif
 {
 	initialize();
 }
 
 /*!
-	Creates a new patch.
+	Creates a patch.
 
 	\param dimension is the dimension of the patch
 	\param origin is the origin of the domain
@@ -83,7 +90,7 @@ VolCartesian::VolCartesian(int dimension,
 }
 
 /*!
-	Creates a new patch.
+	Creates a patch.
 
 	\param id is the id of the patch
 	\param dimension is the dimension of the patch
@@ -95,7 +102,11 @@ VolCartesian::VolCartesian(int id, int dimension,
                                const std::array<double, 3> &origin,
                                const std::array<double, 3> &lengths,
                                const std::array<int, 3> &nCells)
+#if BITPIT_ENABLE_MPI==1
+	: VolumeKernel(id, dimension, MPI_COMM_NULL, 0, false)
+#else
 	: VolumeKernel(id, dimension, false)
+#endif
 {
 	initialize();
 
@@ -106,7 +117,7 @@ VolCartesian::VolCartesian(int id, int dimension,
 }
 
 /*!
-	Creates a new patch.
+	Creates a patch.
 
 	\param dimension is the dimension of the patch
 	\param origin is the origin of the domain
@@ -121,7 +132,7 @@ VolCartesian::VolCartesian(int dimension,
 }
 
 /*!
-	Creates a new patch.
+	Creates a patch.
 
 	\param id is the id of the patch
 	\param dimension is the dimension of the patch
@@ -132,7 +143,11 @@ VolCartesian::VolCartesian(int dimension,
 VolCartesian::VolCartesian(int id, int dimension,
                                const std::array<double, 3> &origin,
                                double length, int nCells)
+#if BITPIT_ENABLE_MPI==1
+	: VolumeKernel(id, dimension, MPI_COMM_NULL, 0, false)
+#else
 	: VolumeKernel(id, dimension, false)
+#endif
 {
 	initialize();
 
@@ -143,7 +158,7 @@ VolCartesian::VolCartesian(int id, int dimension,
 }
 
 /*!
-	Creates a new patch.
+	Creates a patch.
 
 	\param dimension is the dimension of the patch
 	\param origin is the origin of the domain
@@ -158,7 +173,7 @@ VolCartesian::VolCartesian(int dimension,
 }
 
 /*!
-	Creates a new patch.
+	Creates a patch.
 
 	\param id is the id of the patch
 	\param dimension is the dimension of the patch
@@ -169,7 +184,11 @@ VolCartesian::VolCartesian(int dimension,
 VolCartesian::VolCartesian(int id, int dimension,
                                const std::array<double, 3> &origin,
                                double length, double dh)
+#if BITPIT_ENABLE_MPI==1
+	: VolumeKernel(id, dimension, MPI_COMM_NULL, 0, false)
+#else
 	: VolumeKernel(id, dimension, false)
+#endif
 {
 	initialize();
 
@@ -181,12 +200,16 @@ VolCartesian::VolCartesian(int id, int dimension,
 }
 
 /*!
-	Creates a new patch restoring the patch saved in the specified stream.
+	Creates a serial patch restoring the patch saved in the specified stream.
 
 	\param stream is the stream to read from
 */
 VolCartesian::VolCartesian(std::istream &stream)
+#if BITPIT_ENABLE_MPI==1
+	: VolumeKernel(MPI_COMM_NULL, 0, false)
+#else
 	: VolumeKernel(false)
+#endif
 {
 	initialize();
 	restore(stream);
@@ -366,9 +389,11 @@ void VolCartesian::initialize()
 */
 void VolCartesian::initializeCellVolume()
 {
-	m_cellVolume = m_cellSpacings[Vertex::COORD_X] * m_cellSpacings[Vertex::COORD_Y];
-	if (isThreeDimensional()) {
-		m_cellVolume *= m_cellSpacings[Vertex::COORD_Z];
+	m_cellVolume = 1;
+	for (int d = 0; d < getDimension(); ++d) {
+		if (m_directionOrdering[d] >= 0) {
+			m_cellVolume *= m_cellSpacings[d];
+		}
 	}
 }
 
@@ -377,12 +402,12 @@ void VolCartesian::initializeCellVolume()
 */
 void VolCartesian::initializeInterfaceArea()
 {
-	for (int n = 0; n < getDimension(); ++n) {
-		m_interfaceArea[n] = m_cellVolume / m_cellSpacings[n];
-	}
-
-	if (!isThreeDimensional()) {
-		m_interfaceArea[Vertex::COORD_Z] = 0.;
+	for (int d = 0; d < getDimension(); ++d) {
+		if (m_directionOrdering[d] >= 0) {
+			m_interfaceArea[d] = m_cellVolume / m_cellSpacings[d];
+		} else {
+			m_interfaceArea[d] = 0.;
+		}
 	}
 }
 
@@ -394,35 +419,69 @@ void VolCartesian::initializeInterfaceArea()
 void VolCartesian::setDiscretization(const std::array<int, 3> &nCells)
 {
 	// Spacing
-	for (int n = 0; n < getDimension(); ++n) {
+	for (int d = 0; d < getDimension(); ++d) {
 		// Initialize cells
-		m_nCells1D[n]     = nCells[n];
-		m_cellSpacings[n] = (m_maxCoords[n] - m_minCoords[n]) / m_nCells1D[n];
+		if (nCells[d] >  0) {
+			m_nCells1D[d]     = nCells[d];
+			m_cellSpacings[d] = (m_maxCoords[d] - m_minCoords[d]) / m_nCells1D[d];
 
-		m_cellCenters[n].resize(m_nCells1D[n]);
-		for (int i = 0; i < m_nCells1D[n]; i++) {
-			m_cellCenters[n][i] = m_minCoords[n] + (0.5 + i) * m_cellSpacings[n];
+			m_cellCenters[d].resize(m_nCells1D[d]);
+			for (int i = 0; i < m_nCells1D[d]; i++) {
+				m_cellCenters[d][i] = m_minCoords[d] + (0.5 + i) * m_cellSpacings[d];
+			}
+		} else {
+			m_nCells1D[d]     = 0;
+			m_cellSpacings[d] = 0.;
 		}
 
-		log::cout() << "  - Cell count along direction " << n << " : " << m_nCells1D[n] << "\n";
+		log::cout() << "  - Cell count along direction " << d << " : " << m_nCells1D[d] << "\n";
 
 		// Initialize vertices
-		m_nVertices1D[n] = m_nCells1D[n] + 1;
+		m_nVertices1D[d] = m_nCells1D[d] + 1;
 
-		m_vertexCoords[n].resize(m_nVertices1D[n]);
-		for (int i = 0; i < m_nVertices1D[n]; i++) {
-			m_vertexCoords[n][i] = m_minCoords[n] + i * m_cellSpacings[n];
+		m_vertexCoords[d].resize(m_nVertices1D[d]);
+		for (int i = 0; i < m_nVertices1D[d]; i++) {
+			m_vertexCoords[d][i] = m_minCoords[d] + i * m_cellSpacings[d];
 		}
 	}
 
-	if (!isThreeDimensional()) {
-		m_nCells1D[Vertex::COORD_Z]     = 0;
-		m_cellSpacings[Vertex::COORD_Z] = 0.;
+	for (int d = getDimension(); d < 3; ++d) {
+		m_nCells1D[d]     = 0;
+		m_cellSpacings[d] = 0.;
 
-		m_nVertices1D[Vertex::COORD_Z] = 0;
+		m_nVertices1D[d] = 1;
 	}
 
 	log::cout() << std::endl;
+
+	// Define direction ordering
+	//
+	// It is the ordering in which the different directions will be considered
+	// when numbering cell, vertices, ... For each direction, it will contain
+	// the order in which the direction should be considered or -1 if there
+	// are no cells along the direction.
+	for (int d = 0; d < 3; ++d) {
+		if (d == 0) {
+			m_directionOrdering[d] = 0;
+		} else {
+			int previousDirection = m_directionOrdering[d - 1];
+			if (previousDirection < 0 || previousDirection >= 2) {
+				m_directionOrdering[d] = -1;
+				continue;
+			}
+
+			m_directionOrdering[d] = previousDirection  + 1;
+		}
+
+		while (m_nCells1D[m_directionOrdering[d]] == 0) {
+			if (m_directionOrdering[d] == 2) {
+				m_directionOrdering[d] = -1;
+				break;
+			}
+
+			++m_directionOrdering[d];
+		}
+	}
 
 	// Count the total number of vertices
 	m_nVertices = 1;
@@ -433,9 +492,12 @@ void VolCartesian::setDiscretization(const std::array<int, 3> &nCells)
 
 	// Count the total number of cells
 	m_nCells = 1;
-	for (int n = 0; n < getDimension(); ++n) {
-		m_nCells    *= m_nCells1D[n];
+	for (int d = 0; d < getDimension(); ++d) {
+		if (m_directionOrdering[d] >= 0) {
+			m_nCells *= m_nCells1D[d];
+		}
 	}
+
 	log::cout() << "  - Total cell count: " << m_nCells << "\n";
 
 	// Cell volume
@@ -566,17 +628,28 @@ ElementType VolCartesian::getInterfaceType() const
 	\param id is the id of the vertex
 	\result The coordinate of the specified vertex.
 */
-std::array<double, 3> VolCartesian::evalVertexCoords(long id)
+std::array<double, 3> VolCartesian::evalVertexCoords(long id) const
 {
 	std::array<int, 3> ijk = getVertexCartesianId(id);
 
+	return evalVertexCoords(ijk);
+}
+
+/*!
+	Evaluates the coordinate of the specified vertex.
+
+	\param ijk is the set of cartesian indices of the vertex
+	\result The coordinate of the specified vertex.
+*/
+std::array<double, 3> VolCartesian::evalVertexCoords(const std::array<int, 3> &ijk) const
+{
 	std::array<double, 3> coords;
-	coords[Vertex::COORD_X] = m_vertexCoords[Vertex::COORD_X][ijk[0]];
-	coords[Vertex::COORD_Y] = m_vertexCoords[Vertex::COORD_Y][ijk[1]];
-	if (isThreeDimensional()) {
-		coords[Vertex::COORD_Z] = m_vertexCoords[Vertex::COORD_Z][ijk[2]];
-	} else {
-		coords[Vertex::COORD_Z] = 0.0;
+	for (int d = 0; d < 3; ++d) {
+		if (ijk[d] >= 0) {
+			coords[d] = m_vertexCoords[d][ijk[d]];
+		} else {
+			coords[d] = m_minCoords[d];
+		}
 	}
 
 	return coords;
@@ -605,6 +678,31 @@ double VolCartesian::evalCellVolume(long id) const
 {
 	BITPIT_UNUSED(id);
 
+	return evalCellVolume();
+}
+
+/*!
+	Evaluates the volume of the specified cell.
+
+	\param ijk is the set of cartesian indices of the cell
+	\result The volume of the specified cell.
+*/
+double VolCartesian::evalCellVolume(const std::array<int, 3> &ijk) const
+{
+	BITPIT_UNUSED(ijk);
+
+	return evalCellVolume();
+}
+
+/*!
+	Evaluates the volume of a cell.
+
+	The patch is uniformly spaced, so all the cells have the same volume.
+
+	\result The volume of a cell.
+*/
+double VolCartesian::evalCellVolume() const
+{
 	return m_cellVolume;
 }
 
@@ -618,6 +716,31 @@ double VolCartesian::evalCellSize(long id) const
 {
 	BITPIT_UNUSED(id);
 
+	return evalCellSize();
+}
+
+/*!
+	Evaluates the characteristic size of the specified cell.
+
+	\param ijk is the set of cartesian indices of the cell
+	\result The characteristic size of the specified cell.
+*/
+double VolCartesian::evalCellSize(const std::array<int, 3> &ijk) const
+{
+	BITPIT_UNUSED(ijk);
+
+	return evalCellSize();
+}
+
+/*!
+	Evaluates the characteristic size of a cell.
+
+	The patch is uniformly spaced, so all the cells have the same size.
+
+	\result The characteristic size of a cell.
+*/
+double VolCartesian::evalCellSize() const
+{
 	return pow(m_cellVolume, 1. / getDimension());
 }
 
@@ -852,7 +975,7 @@ void VolCartesian::addCells()
 				cellConnect[1] = getVertexLinearId(i + 1, j,     k);
 				cellConnect[2] = getVertexLinearId(i,     j + 1, k);
 				cellConnect[3] = getVertexLinearId(i + 1, j + 1, k);
-				if (isThreeDimensional()) {
+				if (cellType == ElementType::VOXEL) {
 					cellConnect[4] = getVertexLinearId(i,     j,     k + 1);
 					cellConnect[5] = getVertexLinearId(i + 1, j,     k + 1);
 					cellConnect[6] = getVertexLinearId(i,     j + 1, k + 1);
@@ -976,21 +1099,21 @@ void VolCartesian::addInterfacesDirection(int direction)
 				if (direction == Vertex::COORD_X) {
 					connect[0] = getVertexLinearId(i, j,     k);
 					connect[1] = getVertexLinearId(i, j + 1, k);
-					if (isThreeDimensional()) {
+					if (interfaceType == ElementType::PIXEL) {
 						connect[2] = getVertexLinearId(i, j + 1, k + 1);
 						connect[3] = getVertexLinearId(i, j,     k + 1);
 					}
 				} else if (direction == Vertex::COORD_Y) {
 					connect[0] = getVertexLinearId(i,     j,     k);
 					connect[1] = getVertexLinearId(i + 1, j,     k);
-					if (isThreeDimensional()) {
+					if (interfaceType == ElementType::PIXEL) {
 						connect[2] = getVertexLinearId(i + 1, j, k + 1);
 						connect[3] = getVertexLinearId(i,     j, k + 1);
 					}
 				} else if (direction == Vertex::COORD_Z) {
 					connect[0] = getVertexLinearId(i,     j,     k);
 					connect[1] = getVertexLinearId(i + 1, j,     k);
-					if (isThreeDimensional()) {
+					if (interfaceType == ElementType::PIXEL) {
 						connect[2] = getVertexLinearId(i + 1, j + 1, k);
 						connect[3] = getVertexLinearId(i,     j + 1, k);
 					}
@@ -1273,49 +1396,91 @@ std::array<int, 3> VolCartesian::locateClosestCellCartesian(const std::array<dou
 }
 
 /*!
-	Converts the cell cartesian notation to a linear notation
+	Converts the cell cartesian notation to a linear notation.
+
+	The linear index is built incrementing first the cartesian index along
+	direction x (index i), then the cartesian index along direction y (index
+	j) and finally the cartesian index along direction z (index k). If there
+	are no cells along a direction, that directon will not be considered for
+	the generation of the linear index.
+
+	\param i is the cartesian index along the x direction
+	\param j is the cartesian index along the y direction
+	\param k is the cartesian index along the z direction
+	\result The linear id of the specified cell.
 */
 long VolCartesian::getCellLinearId(int i, int j, int k) const
 {
-	long id = i;
-	id += m_nCells1D[Vertex::COORD_X] * j;
-	if (getDimension() == 3) {
-		id += m_nCells1D[Vertex::COORD_Y] * m_nCells1D[Vertex::COORD_X] * k;
+	return getCellLinearId(std::array<int, 3>{{i, j, k}});
+}
+
+/*!
+	Converts the cell cartesian notation to a linear notation.
+
+	The linear index is built incrementing first the cartesian index along
+	direction x (index i), then the cartesian index along direction y (index
+	j) and finally the cartesian index along direction z (index k). If there
+	are no cells along a direction, that directon will not be considered for
+	the generation of the linear index.
+
+	\param ijk is the set of cartesian indices of the cell
+	\result The linear id of the specified cell.
+*/
+long VolCartesian::getCellLinearId(const std::array<int, 3> &ijk) const
+{
+	int l = m_directionOrdering[0];
+	int m = m_directionOrdering[1];
+	int n = m_directionOrdering[2];
+
+	if (l == -1) {
+		return Cell::NULL_ID;
+	}
+
+	long id = ijk[l];
+	if (m >= 0) {
+		id += m_nCells1D[l] * ijk[m];
+		if (n >= 0) {
+			id += m_nCells1D[l] * m_nCells1D[m] * ijk[n];
+		}
 	}
 
 	return id;
 }
 
 /*!
-	Converts the cell cartesian notation to a linear notation
-*/
-long VolCartesian::getCellLinearId(const std::array<int, 3> &ijk) const
-{
-	return getCellLinearId(ijk[Vertex::COORD_X], ijk[Vertex::COORD_Y], ijk[Vertex::COORD_Z]);
-}
-
-/*!
 	Converts a cell linear index to a set of cartesian indices.
+
+	The set of cartesian indices (i, j, k) identifies the position of a cell
+	along the dimensions x, y, and z (in this specific order). If there are no
+	cells along a direction, the corresponding cartesian index is set to a
+	negative number.
 
 	No check on bounds is performed.
 
-	\param[in] idx is the linear index of the cell
+	\param[in] id is the linear index of the cell
 	\result Returns the set of cartesian indices of the cell.
 */
-std::array<int, 3> VolCartesian::getCellCartesianId(long idx) const
+std::array<int, 3> VolCartesian::getCellCartesianId(long id) const
 {
-	int offset_ij = m_nCells1D[0] * m_nCells1D[1];
+	int l = m_directionOrdering[0];
+	int m = m_directionOrdering[1];
+	int n = m_directionOrdering[2];
 
-	std::array<int, 3> id;
-	id[2] = idx / offset_ij;
-	id[1] = (idx - id[2] * offset_ij) / m_nCells1D[0];
-	id[0] = idx - (idx / m_nCells1D[0]) * m_nCells1D[0];
+	std::array<int, 3> ijk = {{-1, -1, -1}};
+	if (m == -1) {
+		ijk[l] = id;
+	} else if (l >= 0) {
+		int offset_lm = m_nCells1D[l] * m_nCells1D[m];
+		int index_n   = id / offset_lm;
 
-	// Set to -1 the z-index for 2D patches
-	unsigned int isThreeDimensionalFlag = isThreeDimensional();
-	id[2] = id[2] * isThreeDimensionalFlag - !isThreeDimensionalFlag;
+		ijk[m] = (id - index_n * offset_lm) / m_nCells1D[l];
+		ijk[l] = id - (id / m_nCells1D[l]) * m_nCells1D[l];
+		if (n != -1) {
+			ijk[n] = index_n;
+		}
+	}
 
-	return id;
+	return ijk;
 }
 
 /*!
@@ -1336,67 +1501,119 @@ bool VolCartesian::isCellCartesianIdValid(const std::array<int, 3> &ijk) const
 }
 
 /*!
-	Converts the vertex cartesian notation to a linear notation
+	Converts the vertex cartesian notation to a linear notation.
+
+	The linear index is built incrementing first the cartesian index along
+	direction x (index i), then the cartesian index along direction y (index
+	j) and finally the cartesian index along direction z (index k). If there
+	are no cells along a direction, that directon will not be considered for
+	the generation of the linear index.
+
+	\param i is the cartesian index along the x direction
+	\param j is the cartesian index along the y direction
+	\param k is the cartesian index along the z direction
+	\result The linear id of the specified vertex.
 */
 long VolCartesian::getVertexLinearId(int i, int j, int k) const
 {
-	long id = i;
-	id += m_nVertices1D[Vertex::COORD_X] * j;
-	if (getDimension() == 3) {
-		id += m_nVertices1D[Vertex::COORD_Y] * m_nVertices1D[Vertex::COORD_X] * k;
+	return getVertexLinearId(std::array<int, 3>{{i, j, k}});
+}
+
+/*!
+	Converts the vertex cartesian notation to a linear notation.
+
+	The linear index is built incrementing first the cartesian index along
+	direction x (index i), then the cartesian index along direction y (index
+	j) and finally the cartesian index along direction z (index k). If there
+	are no cells along a direction, that directon will not be considered for
+	the generation of the linear index.
+
+	\param ijk is the set of cartesian indices of the vertex
+	\result The linear id of the specified vertex.
+*/
+long VolCartesian::getVertexLinearId(const std::array<int, 3> &ijk) const
+{
+	int l = m_directionOrdering[0];
+	int m = m_directionOrdering[1];
+	int n = m_directionOrdering[2];
+
+	if (l == -1) {
+		return Vertex::NULL_ID;
+	}
+
+	long id = ijk[l];
+	if (m >= 0) {
+		id += m_nVertices1D[l] * ijk[m];
+		if (n >= 0) {
+			id += m_nVertices1D[l] * m_nVertices1D[m] * ijk[n];
+		}
 	}
 
 	return id;
 }
 
 /*!
-	Converts the vertex cartesian notation to a linear notation
-*/
-long VolCartesian::getVertexLinearId(const std::array<int, 3> &ijk) const
-{
-	return getVertexLinearId(ijk[Vertex::COORD_X], ijk[Vertex::COORD_Y], ijk[Vertex::COORD_Z]);
-}
-
-/*!
 	Converts a vertex linear index to a set of cartesian indices.
 
+	The set of cartesian indices (i, j, k) identifies the position of a vertex
+	along the dimensions x, y, and z (in this specific order). If there are no
+	cells along a direction, the corresponding cartesian index is set to a
+	negative number.
+
 	No check on bounds is performed.
 
-	\param[in] idx is the linear index of the vertex
+	\param[in] id is the linear index of the vertex
 	\result Returns the set of cartesian indices of the vertex.
 */
-std::array<int, 3> VolCartesian::getVertexCartesianId(long idx) const
+std::array<int, 3> VolCartesian::getVertexCartesianId(long id) const
 {
-	int offset_ij = m_nVertices1D[0] * m_nVertices1D[1];
+	int l = m_directionOrdering[0];
+	int m = m_directionOrdering[1];
+	int n = m_directionOrdering[2];
 
-	std::array<int, 3> id;
-	id[2] = idx / offset_ij;
-	id[1] = (idx - id[2] * offset_ij) / m_nVertices1D[0];
-	id[0] = idx - (idx / m_nVertices1D[0]) * m_nVertices1D[0];
+	std::array<int, 3> ijk = {{-1, -1, -1}};
+	if (m == -1) {
+		ijk[l] = id;
+	} else if (l >= 0) {
+		int offset_lm = m_nVertices1D[l] * m_nVertices1D[m];
+		int index_n   = id / offset_lm;
 
-	// Set to -1 the z-index for 2D patches
-	unsigned int isThreeDimensionalFlag = isThreeDimensional();
-	id[2] = id[2] * isThreeDimensionalFlag - !isThreeDimensionalFlag;
+		ijk[m] = (id - index_n * offset_lm) / m_nVertices1D[l];
+		ijk[l] = id - (id / m_nVertices1D[l]) * m_nVertices1D[l];
+		if (n != -1) {
+			ijk[n] = index_n;
+		}
+	}
 
-	return id;
+	return ijk;
 }
 
 /*!
-	Gets the cartesian indices of the specified local vertex.
+	Gets the cartesian indices of the specified local vertex of a cell.
+
+	The set of cartesian indices (i, j, k) identifies the position of a vertex
+	along the dimensions x, y, and z (in this specific order). If there are no
+	cells along a direction, the corresponding cartesian index is set to a
+	negative number.
 
 	No check on bounds is performed.
 
-	\param[in] cellIdx is the linear cell index
+	\param[in] cellId is the linear cell index
 	\param[in] vertex is the local vertex
 	\result Returns the set of cartesian indices of the vertex.
 */
-std::array<int, 3> VolCartesian::getVertexCartesianId(long cellIdx, int vertex) const
+std::array<int, 3> VolCartesian::getVertexCartesianId(long cellId, int vertex) const
 {
-	return getVertexCartesianId(getCellCartesianId(cellIdx), vertex);
+	return getVertexCartesianId(getCellCartesianId(cellId), vertex);
 }
 
 /*!
-	Gets the cartesian indices of the specified local vertex.
+	Gets the cartesian indices of the specified local vertex of a cell.
+
+	The set of cartesian indices (i, j, k) identifies the position of a vertex
+	along the dimensions x, y, and z (in this specific order). If there are no
+	cells along a direction, the corresponding cartesian index is set to a
+	negative number.
 
 	No check on bounds is performed.
 
@@ -1566,13 +1783,13 @@ std::vector<long> VolCartesian::extractCellSubSet(std::array<int, 3> const &ijkM
 /*!
 	Extract a cell subset.
 
-	\param[in] idxMin is the linear index of the lower bound
-	\param[in] idxMax is the linear index of the upper bound
+	\param[in] idMin is the linear index of the lower bound
+	\param[in] idMax is the linear index of the upper bound
 	\result The linear indices of the cell subset.
 */
-std::vector<long> VolCartesian::extractCellSubSet(int idxMin, int idxMax)
+std::vector<long> VolCartesian::extractCellSubSet(int idMin, int idMax)
 {
-	return extractCellSubSet(getCellCartesianId(idxMin), getCellCartesianId(idxMax));
+	return extractCellSubSet(getCellCartesianId(idMin), getCellCartesianId(idMax));
 }
 
 /*!
@@ -1619,13 +1836,13 @@ std::vector<long> VolCartesian::extractVertexSubSet(std::array<int, 3> const &ij
 /*!
 	Extract a vertex subset.
 
-	\param[in] idxMin is the linear index of the lower bound
-	\param[in] idxMax is the linear index of the upper bound
+	\param[in] idMin is the linear index of the lower bound
+	\param[in] idMax is the linear index of the upper bound
 	\result The linear indices of the vertex subset.
 */
-std::vector<long> VolCartesian::extractVertexSubSet(int idxMin, int idxMax)
+std::vector<long> VolCartesian::extractVertexSubSet(int idMin, int idMax)
 {
-	return extractVertexSubSet(getVertexCartesianId(idxMin), getVertexCartesianId(idxMax));
+	return extractVertexSubSet(getVertexCartesianId(idMin), getVertexCartesianId(idMax));
 }
 
 /*!
@@ -2044,9 +2261,24 @@ std::array<double, 3> VolCartesian::evalCellCentroid(long id) const
 {
 	std::array<int, 3> ijk = getCellCartesianId(id);
 
-	std::array<double, 3> centroid = {{0, 0, 0}};
-	for (int n = 0; n < getDimension(); ++n) {
-		centroid[n] = m_cellCenters[n][ijk[n]];
+	return evalCellCentroid(ijk);
+}
+
+/*!
+	Evaluates the centroid of the specified cell.
+
+	\param ijk is the set of cartesian indices of the cell
+	\result The centroid of the specified cell.
+*/
+std::array<double, 3> VolCartesian::evalCellCentroid(const std::array<int, 3> &ijk) const
+{
+	std::array<double, 3> centroid;
+	for (int d = 0; d < 3; ++d) {
+		if (ijk[d] >= 0) {
+			centroid[d] = m_cellCenters[d][ijk[d]];
+		} else {
+			centroid[d] = m_minCoords[d];
+		}
 	}
 
 	return centroid;

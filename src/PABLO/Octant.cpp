@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -803,6 +803,9 @@ void	Octant::buildChildren(Octant *children) const {
 			zf = 4;
 
 			break;
+
+		default:
+			BITPIT_UNREACHABLE("The maximum number of children is 8.");
 
 		}
 

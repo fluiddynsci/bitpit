@@ -2,7 +2,7 @@
  *
  *  bitpit
  *
- *  Copyright (C) 2015-2019 OPTIMAD engineering Srl
+ *  Copyright (C) 2015-2021 OPTIMAD engineering Srl
  *
  *  -------------------------------------------------------------------------
  *  License
@@ -461,7 +461,7 @@ class VTKRectilinearGrid : public VTK{
         int                     m_dimensions ;              /**< dimensions of the grid [2/3] */
         extension3D_t           m_localIndex ;              /**< min and max indices of local grid */
         extension3D_t           m_globalIndex ;             /**< min and max indices of global grid */
-        std::vector<extension3D_t>      m_procIndex ;       /**< global indices of each processors */
+        std::vector<extension3D_t>      m_procIndex ;       /**< global indices of each process */
 
     public:
         VTKRectilinearGrid();
