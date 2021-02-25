@@ -141,7 +141,9 @@ namespace bitpit {
         utils::binary::write(stream, m_origin[0]);
         utils::binary::write(stream, m_origin[1]);
         utils::binary::write(stream, m_origin[2]);
-        utils::binary::write(stream, m_L);
+        utils::binary::write(stream, m_L[0]);
+        utils::binary::write(stream, m_L[1]);
+        utils::binary::write(stream, m_L[2]);
     }
 
     /*! Restore the octree from the specified stream.
@@ -160,7 +162,9 @@ namespace bitpit {
         setOrigin(origin);
 
         darray3 L;
-        utils::binary::read(stream, L);
+        utils::binary::read(stream, L[0]);
+        utils::binary::read(stream, L[1]);
+        utils::binary::read(stream, L[2]);
         setL(L);
     }
 
