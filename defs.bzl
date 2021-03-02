@@ -4,10 +4,10 @@ def bitpit_library(name, **kwargs):
     sycl_library(
         name = name,
         srcs = native.glob(["src/{}/*.cpp".format(name)]),
-        hdrs = native.glob(["src/{}/*.hpp".format(name)]),
-        includes = ["src/{}".format(name)],
+        hdrs = native.glob(["src/{}/*.hpp".format(name)])+["external/LAPACKE/include/bitpit_private_lapacke.hpp",],
+        includes = ["src/{}".format(name),"external/LAPACKE/include"],
         textual_hdrs = native.glob(["src/{}/*.tpp".format(name)]),
-        copts = ["-Isrc/{}".format(name)],
+        copts = ["-Isrc/{}".format(name),"-mkl"],
         alwayslink = 1,
         **kwargs
     )

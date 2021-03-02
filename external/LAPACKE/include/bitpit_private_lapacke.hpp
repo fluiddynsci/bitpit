@@ -36,20 +36,20 @@
  * [1] https://gcc.gnu.org/bugzilla/show_bug.cgi?id=59087
  */
 #if defined(__clang__)
-#    include <lapacke.h>
+#include <mkl_lapacke.h>
 #elif defined(__ICC) || defined(__INTEL_COMPILER)
-#    include <lapacke.h>
+#include <lapacke.h>
 #elif defined(__GNUC__) || defined(__GNUG__)
-#    if __GNUC__ == 4 && __GNUC_MINOR__ <= 8
-#        include <complex>
-#        define lapack_complex_float std::complex<float>
-#        define lapack_complex_double std::complex<double>
-#        include <lapacke.h>
-#    else
-#        include <lapacke.h>
-#    endif
+#if __GNUC__ == 4 && __GNUC_MINOR__ <= 8
+#include <complex>
+#define lapack_complex_float std::complex<float>
+#define lapack_complex_double std::complex<double>
+#include <lapacke.h>
 #else
-#    include <lapacke.h>
+#include <lapacke.h>
+#endif
+#else
+#include <lapacke.h>
 #endif
 
 #endif

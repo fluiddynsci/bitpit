@@ -72,3 +72,88 @@ bitpit_library(
         ":operators",
     ],
 )
+
+bitpit_library(
+    name = "levelset",
+    deps = [
+        ":IO",
+        ":common",
+        ":communications",
+        ":containers",
+        ":operators",
+        ":volcartesian",
+        ":voloctree",
+    ],
+)
+
+bitpit_library(
+    name = "voloctree",
+    deps = [
+        ":IO",
+        ":common",
+        ":communications",
+        ":containers",
+        ":operators",
+        ":patchkernel",
+        ":PABLO",
+    ],
+)
+
+bitpit_library(
+    name = "volcartesian",
+    deps = [
+        ":IO",
+        ":common",
+        ":communications",
+        ":containers",
+        ":operators",
+        ":patchkernel",
+    ],
+)
+
+bitpit_library(
+    name = "patchkernel",
+    deps = [
+        ":IO",
+        ":common",
+        ":communications",
+        ":containers",
+        ":operators",
+        ":CG",
+    ],
+)
+
+bitpit_library(
+    name = "CG",
+    deps = [
+        ":IO",
+        ":common",
+        ":communications",
+        ":containers",
+        ":operators",
+        ":SA",
+        #"@com_zenotech_python//third_party/mkl:intel_binary_blob",
+    ],
+)
+
+bitpit_library(
+    name = "SA",
+    deps = [
+        ":IO",
+        ":common",
+        ":communications",
+        ":containers",
+        ":operators",
+    ],
+)
+
+bitpit_library(
+    name = "surfunstructured",
+    deps = [
+        ":IO",
+        ":common",
+        ":communications",
+        ":containers",
+        ":operators",
+    ],
+)
