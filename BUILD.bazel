@@ -20,7 +20,8 @@ bitpit_binary(
     name = "bitpit",
     linkshared = 1,  # LGPL-3.0 restriction
     visibility = ["//visibility:public"],
-    deps = [":PABLO"],
+    deps = [":PABLO",
+            ":levelset",],
 )
 
 cc_library(
@@ -83,6 +84,7 @@ bitpit_library(
         ":operators",
         ":volcartesian",
         ":voloctree",
+        ":surfunstructured",
     ],
 )
 
@@ -155,5 +157,6 @@ bitpit_library(
         ":communications",
         ":containers",
         ":operators",
+        ":patchkernel",
     ],
 )
