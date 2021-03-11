@@ -273,12 +273,6 @@ Octant::getLogicalCoord() const {
 	return coord;
 };
 
-/*! Get the refinement marker of an octant.
- * \return Marker of octant.
- */
-int8_t
-Octant::getMarker() const{return m_marker;};
-
 /*! Get the bound flag on an octant face.
  * \param[in] face local index of the face.
  * \return true if the face is a boundary.
