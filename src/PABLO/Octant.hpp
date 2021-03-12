@@ -271,6 +271,13 @@ protected:
 inline uint8_t
 Octant::getLevel() const{return m_level;};
 
+/*! Get the refinement marker of an octant.
+ * \return Marker of octant.
+ */
+inline int8_t
+Octant::getMarker() const{return m_marker;};
+
+
 /*! Set the refinement marker of an octant.
  * \param[in] marker Refinement marker of octant (n=n refinement in adapt, -n=n coarsening in adapt, default=0).
  */
