@@ -134,7 +134,7 @@ bitpit_library(
         ":containers",
         ":operators",
         ":SA",
-        #"@com_zenotech_python//third_party/mkl:intel_binary_blob",
+	"@mkl//:mkl_rt",
     ],
 )
 
