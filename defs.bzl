@@ -7,7 +7,7 @@ def bitpit_library(name, **kwargs):
         hdrs = native.glob(["src/{}/*.hpp".format(name)]) + ["external/LAPACKE/include/bitpit_private_lapacke.hpp"],
         includes = ["src/{}".format(name), "external/LAPACKE/include"],
         textual_hdrs = native.glob(["src/{}/*.tpp".format(name)]),
-        copts = ["-Isrc/{}".format(name), "-mkl"],
+        copts = ["-Isrc/{}".format(name)],
         alwayslink = 1,
         **kwargs
     )
