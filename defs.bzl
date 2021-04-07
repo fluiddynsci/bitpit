@@ -1,7 +1,7 @@
-load("@//tools/sycl:build_defs.bzl", "sycl_binary", "sycl_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
-def bitpit_library(name, **kwargs):
-    sycl_library(
+def bitpit_library(name, deps = [], **kwargs):
+    cc_library(
         name = name,
         srcs = native.glob(["src/{}/*.cpp".format(name)]),
         hdrs = native.glob(["src/{}/*.hpp".format(name)]) + ["external/LAPACKE/include/bitpit_private_lapacke.hpp"],
@@ -9,11 +9,12 @@ def bitpit_library(name, **kwargs):
         textual_hdrs = native.glob(["src/{}/*.tpp".format(name)]),
         copts = ["-Isrc/{}".format(name)],
         alwayslink = 1,
+        deps = deps + ["@local_config_sycl//:sycl"],
         **kwargs
     )
 
 def bitpit_binary(name, **kwargs):
-    sycl_binary(
+    cc_binary(
         name = name,
         **kwargs
     )
