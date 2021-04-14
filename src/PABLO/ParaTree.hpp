@@ -234,6 +234,7 @@ namespace bitpit {
         void		freeComm();
         MPI_Comm	getComm() const;
         bool		isCommSet() const;
+	Map & getMap() { return m_trans; }
 #endif
         const std::vector<uint64_t> &getPartitionRangeGlobalIdx() const;
         const std::vector<uint64_t> &getPartitionFirstDesc() const;

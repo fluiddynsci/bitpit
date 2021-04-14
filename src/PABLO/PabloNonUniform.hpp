@@ -54,9 +54,9 @@ namespace bitpit {
         void	__reset();
     public:
 #if BITPIT_ENABLE_MPI==1
-        PabloNonUniform(sycl::queue queue, const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
-        PabloNonUniform(uint8_t dim, sycl::queue queue, const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
-        PabloNonUniform(double X, double Y, double Z, darray3 L, sycl::queue queue, uint8_t dim = 2, const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
+        PabloNonUniform(const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
+        PabloNonUniform(uint8_t dim, const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
+        PabloNonUniform(double X, double Y, double Z, darray3 L, uint8_t dim = 2, const std::string &logfile = DEFAULT_LOG_FILE, MPI_Comm comm = MPI_COMM_WORLD);
 #else
         PabloNonUniform(const std::string &logfile = DEFAULT_LOG_FILE);
         PabloNonUniform(uint8_t dim, const std::string &logfile = DEFAULT_LOG_FILE);

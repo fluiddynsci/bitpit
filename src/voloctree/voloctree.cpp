@@ -72,9 +72,8 @@ namespace bitpit {
         \param haloSize is the size, expressed in number of layers, of the ghost
         cells halo
 */
-VolOctree::VolOctree(sycl::queue queue, MPI_Comm communicator, std::size_t haloSize)
-    : VolumeKernel(communicator, haloSize, false),
-      virtualOctantsDummy(octalloc(queue))
+VolOctree::VolOctree(MPI_Comm communicator, std::size_t haloSize)
+    : VolumeKernel(communicator, haloSize, false)
 #else
 /*!
         Creates an uninitialized serial patch.
@@ -85,7 +84,7 @@ VolOctree::VolOctree()
 {
     // Create the tree
 #if BITPIT_ENABLE_MPI == 1
-    m_tree = std::unique_ptr<PabloUniform>(new PabloUniform(queue, PabloUniform::DEFAULT_LOG_FILE, communicator));
+    m_tree = std::unique_ptr<PabloUniform>(new PabloUniform(PabloUniform::DEFAULT_LOG_FILE, communicator));
 #else
     m_tree = std::unique_ptr<PabloUniform>(new PabloUniform(PabloUniform::DEFAULT_LOG_FILE));
 #endif
@@ -129,9 +128,9 @@ VolOctree::VolOctree()
         \param haloSize is the size, expressed in number of layers, of the ghost
         cells halo
 */
-VolOctree::VolOctree(sycl::queue queue, int dimension, const std::array<double, 3>& origin, double length, double dh,
+VolOctree::VolOctree(int dimension, const std::array<double, 3>& origin, double length, double dh,
                      MPI_Comm communicator, std::size_t haloSize)
-    : VolOctree(queue, PatchManager::AUTOMATIC_ID, dimension, origin, length, dh, communicator, haloSize)
+    : VolOctree(PatchManager::AUTOMATIC_ID, dimension, origin, length, dh, communicator, haloSize)
 #else
 /*!
         Creates a patch.
@@ -169,10 +168,9 @@ VolOctree::VolOctree(int dimension, const std::array<double, 3>& origin, double 
         \param haloSize is the size, expressed in number of layers, of the ghost
         cells halo
 */
-VolOctree::VolOctree(sycl::queue queue, int id, int dimension, const std::array<double, 3>& origin, double length,
+VolOctree::VolOctree(int id, int dimension, const std::array<double, 3>& origin, double length,
                      double dh, MPI_Comm communicator, std::size_t haloSize)
-    : VolumeKernel(id, dimension, communicator, haloSize, false),
-      virtualOctantsDummy(octalloc(queue))
+    : VolumeKernel(id, dimension, communicator, haloSize, false)
 #else
 /*!
         Creates a patch.
@@ -189,7 +187,7 @@ VolOctree::VolOctree(int id, int dimension, const std::array<double, 3>& origin,
 {
     // Create the tree
 #if BITPIT_ENABLE_MPI == 1
-    m_tree = std::unique_ptr<PabloUniform>(new PabloUniform(origin[0], origin[1], origin[2], length, queue, dimension,
+    m_tree = std::unique_ptr<PabloUniform>(new PabloUniform(origin[0], origin[1], origin[2], length, dimension,
                                                             PabloUniform::DEFAULT_LOG_FILE, communicator));
 #else
     m_tree = std::unique_ptr<PabloUniform>(
@@ -243,9 +241,8 @@ VolOctree::VolOctree(int id, int dimension, const std::array<double, 3>& origin,
         \param haloSize is the size, expressed in number of layers, of the ghost
         cells halo
 */
-VolOctree::VolOctree(sycl::queue queue, std::istream& stream, MPI_Comm communicator, std::size_t haloSize)
-    : VolumeKernel(communicator, haloSize, false),
-      virtualOctantsDummy(octalloc(queue))
+VolOctree::VolOctree(std::istream& stream, MPI_Comm communicator, std::size_t haloSize)
+    : VolumeKernel(communicator, haloSize, false)
 #else
 /*!
         Creates a patch restoring the patch saved in the specified stream.
@@ -283,8 +280,8 @@ VolOctree::VolOctree(std::istream& stream)
         \param tree is the tree that will be used
         \param adopter is a pointer to the tree adopter
 */
-VolOctree::VolOctree(sycl::queue queue, std::unique_ptr<PabloUniform>&& tree, std::unique_ptr<PabloUniform>* adopter)
-    : VolOctree(queue, PatchManager::AUTOMATIC_ID, std::move(tree), adopter) {}
+VolOctree::VolOctree(std::unique_ptr<PabloUniform>&& tree, std::unique_ptr<PabloUniform>* adopter)
+    : VolOctree(PatchManager::AUTOMATIC_ID, std::move(tree), adopter) {}
 
 /*!
         Creates a paritioned patch.
@@ -303,11 +300,10 @@ VolOctree::VolOctree(sycl::queue queue, std::unique_ptr<PabloUniform>&& tree, st
         \param tree is the tree that will be used
         \param adopter is a pointer to the tree adopter
 */
-VolOctree::VolOctree(sycl::queue queue, int id, std::unique_ptr<PabloUniform>&& tree,
+VolOctree::VolOctree(int id, std::unique_ptr<PabloUniform>&& tree,
                      std::unique_ptr<PabloUniform>* adopter)
 #if BITPIT_ENABLE_MPI == 1
-    : VolumeKernel(id, tree->getDim(), tree->getComm(), tree->getNofGhostLayers(), false),
-      virtualOctantsDummy(octalloc(queue))
+    : VolumeKernel(id, tree->getDim(), tree->getComm(), tree->getNofGhostLayers(), false)
 #else
     : VolumeKernel(id, tree->getDim(), false)
 #endif

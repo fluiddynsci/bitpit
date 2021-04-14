@@ -58,21 +58,21 @@ public:
     };
 
 #if BITPIT_ENABLE_MPI == 1
-    VolOctreeNonUniform(sycl::queue queue, MPI_Comm communicator, std::size_t haloSize = 1);
-    VolOctreeNonUniform(sycl::queue queue, int dimension, const std::array<double, 3>& origin, darray3 mL, double dh,
+    VolOctreeNonUniform(MPI_Comm communicator, std::size_t haloSize = 1);
+    VolOctreeNonUniform(int dimension, const std::array<double, 3>& origin, darray3 mL, double dh,
               MPI_Comm communicator, std::size_t haloSize = 1);
-    VolOctreeNonUniform(sycl::queue queue, int id, int dimension, const std::array<double, 3>& origin, darray3 mL, double dh,
+    VolOctreeNonUniform(int id, int dimension, const std::array<double, 3>& origin, darray3 mL, double dh,
               MPI_Comm communicator, std::size_t haloSize = 1);
-    VolOctreeNonUniform(sycl::queue queue, std::istream& stream, MPI_Comm communicator, std::size_t haloSize = 1);
+    VolOctreeNonUniform(std::istream& stream, MPI_Comm communicator, std::size_t haloSize = 1);
 #else
     VolOctreeNonUniform();
     VolOctreeNonUniform(int dimension, const std::array<double, 3>& origin, darray3 mL, double dh);
     VolOctreeNonUniform(int id, int dimension, const std::array<double, 3>& origin, darray3 mL, double dh);
     VolOctreeNonUniform(std::istream& stream);
 #endif
-    VolOctreeNonUniform(sycl::queue queue, std::unique_ptr<PabloNonUniform>&& tree,
+    VolOctreeNonUniform(std::unique_ptr<PabloNonUniform>&& tree,
               std::unique_ptr<PabloNonUniform>* adopter = nullptr);
-    VolOctreeNonUniform(sycl::queue queue, int id, std::unique_ptr<PabloNonUniform>&& tree,
+    VolOctreeNonUniform(int id, std::unique_ptr<PabloNonUniform>&& tree,
               std::unique_ptr<PabloNonUniform>* adopter = nullptr);
 
     ~VolOctreeNonUniform();

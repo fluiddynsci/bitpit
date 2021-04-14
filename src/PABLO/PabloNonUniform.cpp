@@ -50,7 +50,7 @@ namespace bitpit {
     /*!
      * \param[in] comm The MPI communicator used by the parallel octree. MPI_COMM_WORLD is the default value.
      */
-    PabloNonUniform::PabloNonUniform(sycl::queue queue, const std::string &logfile, MPI_Comm comm):ParaTree(queue,logfile,comm){
+    PabloNonUniform::PabloNonUniform(const std::string &logfile, MPI_Comm comm):ParaTree(logfile,comm){
 #else
     PabloNonUniform::PabloNonUniform(const std::string &logfile):ParaTree(logfile){
 #endif
@@ -66,7 +66,7 @@ namespace bitpit {
     /*!
      * \param[in] comm The MPI communicator used by the parallel octree. MPI_COMM_WORLD is the default value.
      */
-    PabloNonUniform::PabloNonUniform(uint8_t dim, sycl::queue queue, const std::string &logfile, MPI_Comm comm):ParaTree(dim,queue,logfile,comm){
+    PabloNonUniform::PabloNonUniform(uint8_t dim, const std::string &logfile, MPI_Comm comm):ParaTree(dim,logfile,comm){
 #else
     PabloNonUniform::PabloNonUniform(uint8_t dim, const std::string &logfile):ParaTree(dim,logfile){
 #endif
@@ -86,7 +86,7 @@ namespace bitpit {
     /*!
      * \param[in] comm The MPI communicator used by the parallel octree. MPI_COMM_WORLD is the default value.
      */
-    PabloNonUniform::PabloNonUniform(double X, double Y, double Z, darray3 L, sycl::queue queue, uint8_t dim, const std::string &logfile, MPI_Comm comm):ParaTree(dim,queue,logfile,comm){
+    PabloNonUniform::PabloNonUniform(double X, double Y, double Z, darray3 L, uint8_t dim, const std::string &logfile, MPI_Comm comm):ParaTree(dim,logfile,comm){
 #else
     PabloNonUniform::PabloNonUniform(double X, double Y, double Z, darray3 L, uint8_t dim, const std::string &logfile):ParaTree(dim,logfile){
 #endif

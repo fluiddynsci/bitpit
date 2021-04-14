@@ -72,9 +72,8 @@ namespace bitpit {
         \param haloSize is the size, expressed in number of layers, of the ghost
         cells halo
 */
-VolOctreeNonUniform::VolOctreeNonUniform(sycl::queue queue, MPI_Comm communicator, std::size_t haloSize)
-    : VolumeKernel(communicator, haloSize, false),
-      virtualOctantsDummy(octalloc(queue))
+VolOctreeNonUniform::VolOctreeNonUniform(MPI_Comm communicator, std::size_t haloSize)
+    : VolumeKernel(communicator, haloSize, false)
 #else
 /*!
         Creates an uninitialized serial patch.
@@ -85,7 +84,7 @@ VolOctreeNonUniform::VolOctreeNonUniform()
 {
     // Create the tree
 #if BITPIT_ENABLE_MPI == 1
-    m_tree = std::unique_ptr<PabloNonUniform>(new PabloNonUniform(queue, PabloNonUniform::DEFAULT_LOG_FILE, communicator));
+    m_tree = std::unique_ptr<PabloNonUniform>(new PabloNonUniform(PabloNonUniform::DEFAULT_LOG_FILE, communicator));
 #else
     m_tree = std::unique_ptr<PabloNonUniform>(new PabloNonUniform(PabloNonUniform::DEFAULT_LOG_FILE));
 #endif
@@ -129,9 +128,9 @@ VolOctreeNonUniform::VolOctreeNonUniform()
         \param haloSize is the size, expressed in number of layers, of the ghost
         cells halo
 */
-VolOctreeNonUniform::VolOctreeNonUniform(sycl::queue queue, int dimension, const std::array<double, 3>& origin, darray3 mL, double dh,
+VolOctreeNonUniform::VolOctreeNonUniform(int dimension, const std::array<double, 3>& origin, darray3 mL, double dh,
                      MPI_Comm communicator, std::size_t haloSize)
-    : VolOctreeNonUniform(queue, PatchManager::AUTOMATIC_ID, dimension, origin, mL, dh, communicator, haloSize)
+    : VolOctreeNonUniform(PatchManager::AUTOMATIC_ID, dimension, origin, mL, dh, communicator, haloSize)
 #else
 /*!
         Creates a patch.
@@ -169,10 +168,9 @@ VolOctreeNonUniform::VolOctreeNonUniform(int dimension, const std::array<double,
         \param haloSize is the size, expressed in number of layers, of the ghost
         cells halo
 */
-VolOctreeNonUniform::VolOctreeNonUniform(sycl::queue queue, int id, int dimension, const std::array<double, 3>& origin, darray3 mL,
+VolOctreeNonUniform::VolOctreeNonUniform(int id, int dimension, const std::array<double, 3>& origin, darray3 mL,
                      double dh, MPI_Comm communicator, std::size_t haloSize)
-    : VolumeKernel(id, dimension, communicator, haloSize, false),
-      virtualOctantsDummy(octalloc(queue))
+    : VolumeKernel(id, dimension, communicator, haloSize, false)
 #else
 /*!
         Creates a patch.
@@ -189,7 +187,7 @@ VolOctreeNonUniform::VolOctreeNonUniform(int id, int dimension, const std::array
 {
     // Create the tree
 #if BITPIT_ENABLE_MPI == 1
-    m_tree = std::unique_ptr<PabloNonUniform>(new PabloNonUniform(origin[0], origin[1], origin[2], mL, queue, dimension,
+    m_tree = std::unique_ptr<PabloNonUniform>(new PabloNonUniform(origin[0], origin[1], origin[2], mL, dimension,
                                                             PabloUniform::DEFAULT_LOG_FILE, communicator));
 #else
     m_tree = std::unique_ptr<PabloNonUniform>(
@@ -244,9 +242,8 @@ VolOctreeNonUniform::VolOctreeNonUniform(int id, int dimension, const std::array
         \param haloSize is the size, expressed in number of layers, of the ghost
         cells halo
 */
-VolOctreeNonUniform::VolOctreeNonUniform(sycl::queue queue, std::istream& stream, MPI_Comm communicator, std::size_t haloSize)
-    : VolumeKernel(communicator, haloSize, false),
-      virtualOctantsDummy(octalloc(queue))
+VolOctreeNonUniform::VolOctreeNonUniform(std::istream& stream, MPI_Comm communicator, std::size_t haloSize)
+    : VolumeKernel(communicator, haloSize, false)
 #else
 /*!
         Creates a patch restoring the patch saved in the specified stream.
@@ -284,8 +281,8 @@ VolOctreeNonUniform::VolOctreeNonUniform(std::istream& stream)
         \param tree is the tree that will be used
         \param adopter is a pointer to the tree adopter
 */
-VolOctreeNonUniform::VolOctreeNonUniform(sycl::queue queue, std::unique_ptr<PabloNonUniform>&& tree, std::unique_ptr<PabloNonUniform>* adopter)
-    : VolOctreeNonUniform(queue, PatchManager::AUTOMATIC_ID, std::move(tree), adopter) {}
+VolOctreeNonUniform::VolOctreeNonUniform(std::unique_ptr<PabloNonUniform>&& tree, std::unique_ptr<PabloNonUniform>* adopter)
+    : VolOctreeNonUniform(PatchManager::AUTOMATIC_ID, std::move(tree), adopter) {}
 
 /*!
         Creates a paritioned patch.
@@ -304,11 +301,10 @@ VolOctreeNonUniform::VolOctreeNonUniform(sycl::queue queue, std::unique_ptr<Pabl
         \param tree is the tree that will be used
         \param adopter is a pointer to the tree adopter
 */
-VolOctreeNonUniform::VolOctreeNonUniform(sycl::queue queue, int id, std::unique_ptr<PabloNonUniform>&& tree,
+VolOctreeNonUniform::VolOctreeNonUniform(int id, std::unique_ptr<PabloNonUniform>&& tree,
                      std::unique_ptr<PabloNonUniform>* adopter)
 #if BITPIT_ENABLE_MPI == 1
-    : VolumeKernel(id, tree->getDim(), tree->getComm(), tree->getNofGhostLayers(), false),
-      virtualOctantsDummy(octalloc(queue))
+    : VolumeKernel(id, tree->getDim(), tree->getComm(), tree->getNofGhostLayers(), false)
 #else
     : VolumeKernel(id, tree->getDim(), false)
 #endif

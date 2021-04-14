@@ -1,6 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 
-def bitpit_library(name, deps = [], **kwargs):
+def bitpit_library(name, **kwargs):
     cc_library(
         name = name,
         srcs = native.glob(["src/{}/*.cpp".format(name)]),
@@ -9,7 +9,6 @@ def bitpit_library(name, deps = [], **kwargs):
         textual_hdrs = native.glob(["src/{}/*.tpp".format(name)]),
         copts = ["-Isrc/{}".format(name)],
         alwayslink = 1,
-        deps = deps + ["@local_config_sycl//:sycl"],
         **kwargs
     )
 
