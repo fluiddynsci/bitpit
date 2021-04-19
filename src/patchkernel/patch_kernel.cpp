@@ -198,9 +198,6 @@ PatchKernel::PatchKernel(const PatchKernel &other)
       m_interfaces(other.m_interfaces),
       m_alteredCells(other.m_alteredCells),
       m_alteredInterfaces(other.m_alteredInterfaces),
-      m_vertexIdGenerator(other.m_vertexIdGenerator),
-      m_interfaceIdGenerator(other.m_interfaceIdGenerator),
-      m_cellIdGenerator(other.m_cellIdGenerator),
       m_nInternalVertices(other.m_nInternalVertices),
 #if BITPIT_ENABLE_MPI==1
       m_nGhostVertices(other.m_nGhostVertices),
@@ -255,6 +252,19 @@ PatchKernel::PatchKernel(const PatchKernel &other)
       m_ghostCellExchangeSources(other.m_ghostCellExchangeSources)
 #endif
 {
+	// Create index generators
+	if (other.m_vertexIdGenerator) {
+		m_vertexIdGenerator = std::unique_ptr<IndexGenerator<long>>(new IndexGenerator<long>(*(other.m_vertexIdGenerator)));
+	}
+
+	if (other.m_interfaceIdGenerator) {
+		m_interfaceIdGenerator = std::unique_ptr<IndexGenerator<long>>(new IndexGenerator<long>(*(other.m_interfaceIdGenerator)));
+	}
+
+	if (other.m_cellIdGenerator) {
+		m_cellIdGenerator = std::unique_ptr<IndexGenerator<long>>(new IndexGenerator<long>(*(other.m_cellIdGenerator)));
+	}
+
 	// Register the patch
 	patch::manager().registerPatch(this);
 
@@ -352,6 +362,11 @@ void PatchKernel::initialize()
 
 	// Dimension
 	m_dimension = -1;
+
+	// Index generators
+	setVertexAutoIndexing(true);
+	setInterfaceAutoIndexing(true);
+	setCellAutoIndexing(true);
 
 	// Set adjacencies build strategy
 	setAdjacenciesBuildStrategy(ADJACENCIES_NONE);
@@ -833,7 +848,9 @@ void PatchKernel::reset()
 void PatchKernel::resetVertices()
 {
 	m_vertices.clear();
-	m_vertexIdGenerator.reset();
+	if (m_vertexIdGenerator) {
+		m_vertexIdGenerator->reset();
+	}
 	m_nInternalVertices = 0;
 #if BITPIT_ENABLE_MPI==1
 	m_nGhostVertices = 0;
@@ -854,7 +871,9 @@ void PatchKernel::resetVertices()
 void PatchKernel::resetCells()
 {
 	m_cells.clear();
-	m_cellIdGenerator.reset();
+	if (m_cellIdGenerator) {
+		m_cellIdGenerator->reset();
+	}
 	m_nInternalCells = 0;
 #if BITPIT_ENABLE_MPI==1
 	m_nGhostCells = 0;
@@ -917,7 +936,9 @@ void PatchKernel::_resetInterfaces()
 	}
 
 	m_interfaces.clear();
-	m_interfaceIdGenerator.reset();
+	if (m_interfaceIdGenerator) {
+		m_interfaceIdGenerator->reset();
+	}
 }
 
 /*!
@@ -1305,6 +1326,43 @@ bool PatchKernel::isThreeDimensional() const
 }
 
 /*!
+	Returns true if auto-indexing is enabled for vertices.
+
+	When auto-indexing is disabled, ids for newly added vertices has to be
+	manually specified.
+
+	\return Returns true if auto-indexing is enabled for vertices.
+*/
+bool PatchKernel::isVertexAutoIndexingEnabled() const
+{
+	return static_cast<bool>(m_vertexIdGenerator);
+}
+
+/*!
+	Enables or disables auto-indexing for vertices.
+
+	When auto-indexing is disabled, ids for newly added vertices has to be
+	manually specified.
+
+	\param enabled if set to true the auto-indexing will be enabled
+*/
+void PatchKernel::setVertexAutoIndexing(bool enabled)
+{
+	if (isVertexAutoIndexingEnabled() == enabled) {
+		return;
+	}
+
+	if (enabled) {
+		m_vertexIdGenerator = std::unique_ptr<IndexGenerator<long>>(new IndexGenerator<long>());
+		for (auto itr = m_vertices.begin(); itr != m_vertices.end(); ++itr) {
+			m_vertexIdGenerator->setAssigned(itr.getId());
+		}
+	} else {
+		m_vertexIdGenerator.reset();
+	}
+}
+
+/*!
 	Gets the number of vertices in the patch.
 
 	\return The number of vertices in the patch
@@ -1524,10 +1582,14 @@ PatchKernel::VertexIterator PatchKernel::addVertex(const std::array<double, 3> &
 		return vertexEnd();
 	}
 
-	if (id < 0) {
-		id = m_vertexIdGenerator.generate();
-	} else {
-		m_vertexIdGenerator.setAssigned(id);
+	if (m_vertexIdGenerator) {
+		if (id < 0) {
+			id = m_vertexIdGenerator->generate();
+		} else {
+			m_vertexIdGenerator->setAssigned(id);
+		}
+	} else if (id < 0) {
+		throw std::runtime_error("No valid id has been provided for the vertex.");
 	}
 
 	// Add the vertex
@@ -1663,7 +1725,9 @@ bool PatchKernel::deleteVertex(long id)
 #endif
 
 	// Vertex id is no longer used
-	m_vertexIdGenerator.trash(id);
+	if (m_vertexIdGenerator) {
+		m_vertexIdGenerator->trash(id);
+	}
 
 	return true;
 }
@@ -1844,6 +1908,7 @@ bool PatchKernel::deleteOrphanVertices()
 
 	std::vector<long> list = findOrphanVertices();
 	deleteVertices(list);
+	updateBoundingBox();
 
 	return true;
 }
@@ -2047,6 +2112,43 @@ void PatchKernel::updateLastInternalVertexId()
 	lastInternalVertexItr = --m_vertices.end();
 	m_lastInternalVertexId = lastInternalVertexItr->getId();
 #endif
+}
+
+/*!
+	Returns true if auto-indexing is enabled for cells.
+
+	When auto-indexing is disabled, cell ids for newly added cells should
+	be provided by the user.
+
+	\return Returns true if auto-indexing is enabled for cells.
+*/
+bool PatchKernel::isCellAutoIndexingEnabled() const
+{
+	return static_cast<bool>(m_cellIdGenerator);
+}
+
+/*!
+	Enables or disables auto-indexing for cells.
+
+	When auto-indexing is disabled, ids for newly added cells has to be
+	manually specified.
+
+	\param enabled if set to true the auto-indexing will be enabled
+*/
+void PatchKernel::setCellAutoIndexing(bool enabled)
+{
+	if (isCellAutoIndexingEnabled() == enabled) {
+		return;
+	}
+
+	if (enabled) {
+		m_cellIdGenerator = std::unique_ptr<IndexGenerator<long>>(new IndexGenerator<long>());
+		for (auto itr = m_cells.begin(); itr != m_cells.end(); ++itr) {
+			m_cellIdGenerator->setAssigned(itr.getId());
+		}
+	} else {
+		m_cellIdGenerator.reset();
+	}
 }
 
 /*!
@@ -2439,10 +2541,14 @@ PatchKernel::CellIterator PatchKernel::addCell(ElementType type, std::unique_ptr
 		return cellEnd();
 	}
 
-	if (id < 0) {
-		id = m_cellIdGenerator.generate();
-	} else {
-		m_cellIdGenerator.setAssigned(id);
+	if (m_cellIdGenerator) {
+		if (id < 0) {
+			id = m_cellIdGenerator->generate();
+		} else {
+			m_cellIdGenerator->setAssigned(id);
+		}
+	} else if (id < 0) {
+		throw std::runtime_error("No valid id has been provided for the cell.");
 	}
 
 	if (Cell::getDimension(type) > getDimension()) {
@@ -2618,7 +2724,7 @@ bool PatchKernel::deleteCell(long id)
 #endif
 
 	// Cell id is no longer used
-	m_cellIdGenerator.trash(id);
+	m_cellIdGenerator->trash(id);
 
 	return true;
 }
@@ -2853,8 +2959,7 @@ std::vector<long> PatchKernel::findCellNeighs(long id) const
 */
 void PatchKernel::findCellNeighs(long id, std::vector<long> *neighs) const
 {
-	std::vector<long> blackList;
-	_findCellNeighs(id, blackList, neighs);
+	_findCellNeighs(id, nullptr, neighs);
 }
 
 /*!
@@ -2936,13 +3041,14 @@ std::vector<long> PatchKernel::findCellFaceNeighs(long id) const
 
 	\param id is the id of the cell
 	\param blackList is a list of cells that are excluded from the search.
-	The blacklist has to be a unique list of ordered cell ids.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
 	\param[in,out] neighs is the vector were the neighbours of the specified
 	cell for the given vertex will be stored. The vector is not cleared before
 	adding the neighbours, it is extended by appending all the neighbours
 	found by this function
 */
-void PatchKernel::_findCellNeighs(long id, const std::vector<long> &blackList, std::vector<long> *neighs) const
+void PatchKernel::_findCellNeighs(long id, const std::vector<long> *blackList, std::vector<long> *neighs) const
 {
 	// Some patches can work (at least partially) without initializing the
 	// cell list. To handle those patches, if there are no cells the vertex
@@ -2988,7 +3094,7 @@ void PatchKernel::findCellFaceNeighs(long id, std::vector<long> *neighs) const
 
 	// Get the neighbours
 	for (int i = 0; i < nCellFaces; ++i) {
-		_findCellFaceNeighs(id, i, std::vector<long>(), neighs);
+		_findCellFaceNeighs(id, i, nullptr, neighs);
 	}
 }
 
@@ -3002,7 +3108,7 @@ void PatchKernel::findCellFaceNeighs(long id, std::vector<long> *neighs) const
 std::vector<long> PatchKernel::findCellFaceNeighs(long id, int face) const
 {
 	std::vector<long> neighs;
-	_findCellFaceNeighs(id, face, std::vector<long>(), &neighs);
+	_findCellFaceNeighs(id, face, nullptr, &neighs);
 
 	return neighs;
 }
@@ -3019,7 +3125,7 @@ std::vector<long> PatchKernel::findCellFaceNeighs(long id, int face) const
 */
 void PatchKernel::findCellFaceNeighs(long id, int face, std::vector<long> *neighs) const
 {
-	_findCellFaceNeighs(id, face, std::vector<long>(), neighs);
+	_findCellFaceNeighs(id, face, nullptr, neighs);
 }
 
 /*!
@@ -3028,13 +3134,14 @@ void PatchKernel::findCellFaceNeighs(long id, int face, std::vector<long> *neigh
 	\param id is the id of the cell
 	\param face is a face of the cell
 	\param blackList is a list of cells that are excluded from the search.
-	The blacklist has to be a unique list of ordered cell ids.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
 	\param[in,out] neighs is the vector were the neighbours of the specified
 	cell for the given face will be stored. The vector is not cleared before
 	adding the neighbours, it is extended by appending all the neighbours
 	found by this function
 */
-void PatchKernel::_findCellFaceNeighs(long id, int face, const std::vector<long> &blackList, std::vector<long> *neighs) const
+void PatchKernel::_findCellFaceNeighs(long id, int face, const std::vector<long> *blackList, std::vector<long> *neighs) const
 {
 	const Cell &cell = getCell(id);
 
@@ -3042,7 +3149,7 @@ void PatchKernel::_findCellFaceNeighs(long id, int face, const std::vector<long>
 	const long *faceAdjacencies = cell.getAdjacencies(face);
 	for (int k = 0; k < nFaceAdjacencies; ++k) {
 		long neighId = faceAdjacencies[k];
-		if (utils::findInOrderedVector<long>(neighId, blackList) == blackList.end()) {
+		if (!blackList || utils::findInOrderedVector<long>(neighId, *blackList) == blackList->end()) {
 			utils::addToOrderedVector<long>(neighId, *neighs);
 		}
 	}
@@ -3102,13 +3209,14 @@ void PatchKernel::findCellEdgeNeighs(long id, bool complete, std::vector<long> *
 	}
 
 	// Get the neighbours
-	std::vector<long> blackList;
+	std::unique_ptr<std::vector<long>> blackList;
 	if (!complete) {
-		findCellFaceNeighs(id, &blackList);
+		blackList = std::unique_ptr<std::vector<long>>(new std::vector<long>());
+		findCellFaceNeighs(id, blackList.get());
 	}
 
 	for (int i = 0; i < nCellEdges; ++i) {
-		_findCellEdgeNeighs(id, i, blackList, neighs);
+		_findCellEdgeNeighs(id, i, blackList.get(), neighs);
 	}
 }
 
@@ -3143,7 +3251,7 @@ std::vector<long> PatchKernel::findCellEdgeNeighs(long id, int edge) const
 */
 void PatchKernel::findCellEdgeNeighs(long id, int edge, std::vector<long> *neighs) const
 {
-	_findCellEdgeNeighs(id, edge, std::vector<long>(), neighs);
+	_findCellEdgeNeighs(id, edge, nullptr, neighs);
 }
 
 /*!
@@ -3154,13 +3262,14 @@ void PatchKernel::findCellEdgeNeighs(long id, int edge, std::vector<long> *neigh
 	\param id is the id of the cell
 	\param edge is an edge of the cell
 	\param blackList is a list of cells that are excluded from the search.
-	The blacklist has to be a unique list of ordered cell ids.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
 	\param[in,out] neighs is the vector were the neighbours of the specified
 	cell for the given edge will be stored. The vector is not cleared before
 	adding the neighbours, it is extended by appending all the neighbours
 	found by this function
 */
-void PatchKernel::_findCellEdgeNeighs(long id, int edge, const std::vector<long> &blackList, std::vector<long> *neighs) const
+void PatchKernel::_findCellEdgeNeighs(long id, int edge, const std::vector<long> *blackList, std::vector<long> *neighs) const
 {
 	assert(isThreeDimensional());
 	if (!isThreeDimensional()) {
@@ -3251,17 +3360,18 @@ void PatchKernel::findCellVertexNeighs(long id, bool complete, std::vector<long>
 	}
 
 	// Get the neighbours
-	std::vector<long> blackList;
+	std::unique_ptr<std::vector<long>> blackList;
 	if (!complete) {
+		blackList = std::unique_ptr<std::vector<long>>(new std::vector<long>());
 		if (isThreeDimensional()) {
-			findCellEdgeNeighs(id, true, &blackList);
+			findCellEdgeNeighs(id, true, blackList.get());
 		} else {
-			findCellFaceNeighs(id, true, &blackList);
+			findCellFaceNeighs(id, true, blackList.get());
 		}
 	}
 
 	for (int i = 0; i < nCellVertices; ++i) {
-		_findCellVertexNeighs(id, i, blackList, neighs);
+		_findCellVertexNeighs(id, i, blackList.get(), neighs);
 	}
 }
 
@@ -3292,7 +3402,7 @@ std::vector<long> PatchKernel::findCellVertexNeighs(long id, int vertex) const
 */
 void PatchKernel::findCellVertexNeighs(long id, int vertex, std::vector<long> *neighs) const
 {
-	_findCellVertexNeighs(id, vertex, std::vector<long>(), neighs);
+	_findCellVertexNeighs(id, vertex, nullptr, neighs);
 }
 
 /*!
@@ -3317,13 +3427,14 @@ void PatchKernel::findCellVertexNeighs(long id, int vertex, std::vector<long> *n
 	\param id is the id of the cell
 	\param vertex is a local vertex of the cell
 	\param blackList is a list of cells that are excluded from the search.
-	The blacklist has to be a unique list of ordered cell ids.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
 	\param[in,out] neighs is the vector were the neighbours of the specified
 	cell for the given vertex will be stored. The vector is not cleared before
 	adding the neighbours, it is extended by appending all the neighbours
 	found by this function
 */
-void PatchKernel::_findCellVertexNeighs(long id, int vertex, const std::vector<long> &blackList, std::vector<long> *neighs) const
+void PatchKernel::_findCellVertexNeighs(long id, int vertex, const std::vector<long> *blackList, std::vector<long> *neighs) const
 {
 	const Cell &cell = getCell(id);
 	long vertexId = cell.getVertexId(vertex);
@@ -3341,7 +3452,6 @@ void PatchKernel::_findCellVertexNeighs(long id, int vertex, const std::vector<l
 	scanQueue.reserve(GUESS_NEIGHS_COUNT);
 	scanQueue.push_back(id);
 
-	ConstProxyVector<long> scanCellVertexIds;
 	while (!scanQueue.empty()) {
 		// Pop a cell to process
 		long scanCellId = scanQueue.back();
@@ -3349,13 +3459,22 @@ void PatchKernel::_findCellVertexNeighs(long id, int vertex, const std::vector<l
 		scanQueue.pop_back();
 		utils::addToOrderedVector<long>(scanCell.getId(), alreadyProcessed);
 
-		// Get vertex list
+		// Get cell information
+		const ReferenceElementInfo *scanCellInfo = nullptr;
+		const long *scanCellConnectivity = nullptr;
 		if (scanCell.hasInfo()) {
-			scanCellVertexIds = scanCell.getVertexIds();
+			scanCellInfo = &(scanCell.getInfo());
+			scanCellConnectivity = scanCell.getConnect();
 		}
 
 		// Use face adjacencies to find vertex negihbours
-		int nFaces = scanCell.getFaceCount();
+		int nFaces;
+		if (scanCellInfo) {
+			nFaces = scanCellInfo->nFaces;
+		} else {
+			nFaces = scanCell.getFaceCount();
+		}
+
 		for (int i = 0; i < nFaces; ++i) {
 			// Discard faces with no neighbours
             if (scanCell.isFaceBorder(i)) {
@@ -3369,12 +3488,18 @@ void PatchKernel::_findCellVertexNeighs(long id, int vertex, const std::vector<l
 			// accessing the local connectivity of the face is cheap. If the
 			// cell has no reference element, it is better to avoid using the
 			// local connectivity of the face.
+			//
+			// Moreover, to optimize the search for cells that has a reference
+			// element, we work directly on the connectivity inseatd of on the
+			// list of vertex ids. That's because for reference elements the
+			// connectivity is just a list of vertices.
 			bool faceOwnsVertex = false;
-			if (scanCell.hasInfo()) {
-				ConstProxyVector<int> faceLocalVertexIds = scanCell.getFaceLocalVertexIds(i);
-				int nFaceVertices = faceLocalVertexIds.size();
+			if (scanCellInfo) {
+				const ReferenceElementInfo &faceInfo = ReferenceElementInfo::getInfo(scanCellInfo->faceTypeStorage[i]);
+				const int *faceLocalConnectivity = scanCellInfo->faceConnectStorage[i].data();
+				const int nFaceVertices = faceInfo.nVertices;
 				for (int k = 0; k < nFaceVertices; ++k) {
-					long faceVertexId = scanCellVertexIds[faceLocalVertexIds[k]];
+					long faceVertexId = scanCellConnectivity[faceLocalConnectivity[k]];
 					if (faceVertexId == vertexId) {
 						faceOwnsVertex = true;
 						break;
@@ -3410,7 +3535,7 @@ void PatchKernel::_findCellVertexNeighs(long id, int vertex, const std::vector<l
 				}
 
 				// Update list of vertex neighbours
-				if (utils::findInOrderedVector<long>(faceNeighId, blackList) == blackList.end()) {
+				if (!blackList || utils::findInOrderedVector<long>(faceNeighId, *blackList) == blackList->end()) {
 					utils::addToOrderedVector<long>(faceNeighId, *neighs);
 				}
 
@@ -3574,6 +3699,50 @@ void PatchKernel::findVertexOneRing(long vertexId, std::vector<long> *ring) cons
 
     // Find vertex one-ring
     findCellVertexOneRing(cellId, vertexLocalId, ring);
+}
+
+/*!
+	Returns true if auto-indexing is enabled for interfaces.
+
+	When auto-indexing is disabled, ids for newly added interfaces has to be
+	manually specified.
+
+	\return Returns true if auto-indexing is enabled for interfaces.
+*/
+bool PatchKernel::isInterfaceAutoIndexingEnabled() const
+{
+	return static_cast<bool>(m_interfaceIdGenerator);
+}
+
+/*!
+	Enables or disables auto-indexing for interfaces.
+
+	When auto-indexing is disabled, ids for newly added interfaces has to be
+	manually specified.
+
+	Auto-indexing cannot be disabled if interfaces build strategy is set
+	to "automatic".
+
+	\param enabled if set to true the auto-indexing will be enabled
+*/
+void PatchKernel::setInterfaceAutoIndexing(bool enabled)
+{
+	if (isInterfaceAutoIndexingEnabled() == enabled) {
+		return;
+	}
+
+	if (enabled) {
+		m_interfaceIdGenerator = std::unique_ptr<IndexGenerator<long>>(new IndexGenerator<long>());
+		for (auto itr = m_interfaces.begin(); itr != m_interfaces.end(); ++itr) {
+			m_interfaceIdGenerator->setAssigned(itr.getId());
+		}
+	} else {
+		if (getInterfacesBuildStrategy() == INTERFACES_AUTOMATIC) {
+			throw std::runtime_error("Auto-indexing cannot be disabled if interfaces build strategy is set to automatic.");
+		}
+
+		m_interfaceIdGenerator.reset();
+	}
 }
 
 /*!
@@ -3829,10 +3998,14 @@ PatchKernel::InterfaceIterator PatchKernel::addInterface(ElementType type,
 		return interfaceEnd();
 	}
 
-	if (id < 0) {
-		id = m_interfaceIdGenerator.generate();
-	} else {
-		m_interfaceIdGenerator.setAssigned(id);
+	if (m_interfaceIdGenerator) {
+		if (id < 0) {
+			id = m_interfaceIdGenerator->generate();
+		} else {
+			m_interfaceIdGenerator->setAssigned(id);
+		}
+	} else if (id < 0) {
+		throw std::runtime_error("No valid id has been provided for the interface.");
 	}
 
 	if (Interface::getDimension(type) > (getDimension() - 1)) {
@@ -3926,7 +4099,9 @@ bool PatchKernel::deleteInterface(long id)
 
 	// Delete interface
 	m_interfaces.erase(id, true);
-	m_interfaceIdGenerator.trash(id);
+	if (m_interfaceIdGenerator) {
+		m_interfaceIdGenerator->trash(id);
+	}
 
 	return true;
 }
@@ -5368,6 +5543,12 @@ PatchKernel::InterfacesBuildStrategy PatchKernel::getInterfacesBuildStrategy() c
 */
 void PatchKernel::setInterfacesBuildStrategy(InterfacesBuildStrategy status)
 {
+	if (status == INTERFACES_AUTOMATIC) {
+		if (!isInterfaceAutoIndexingEnabled()) {
+			throw std::runtime_error("Automatic build strategy requires auto-indexing.");
+		}
+	}
+
 	m_interfacesBuildStrategy = status;
 }
 
@@ -6336,29 +6517,34 @@ void PatchKernel::removePointFromBoundingBox(const std::array<double, 3> &point)
 		return;
 	}
 
+	double tolerance = getTol();
 	for (size_t k = 0; k < point.size(); ++k) {
 		double value = point[k];
 
 		// Check if maximum value is still valid
-		if (utils::DoubleFloatingEqual()(value, m_boxMaxPoint[k], getTol())) {
+		if (utils::DoubleFloatingEqual()(value, m_boxMaxPoint[k], tolerance)) {
 			--m_boxMaxCounter[k];
 			if (m_boxMaxCounter[k] == 0) {
 				setBoundingBoxDirty(true);
+				return;
 			}
 		} else if (value > m_boxMaxPoint[k]) {
 			assert(false && "Bounding box is in inconsistent state.");
 			setBoundingBoxDirty(true);
+			return;
 		}
 
 		// Update minimum value
-		if (utils::DoubleFloatingEqual()(value, m_boxMinPoint[k], getTol())) {
+		if (utils::DoubleFloatingEqual()(value, m_boxMinPoint[k], tolerance)) {
 			--m_boxMinCounter[k];
 			if (m_boxMinCounter[k] == 0) {
 				setBoundingBoxDirty(true);
+				return;
 			}
 		} else if (value < m_boxMinPoint[k]) {
 			assert(false && "Bounding box is in inconsistent state.");
 			setBoundingBoxDirty(true);
+			return;
 		}
 	}
 }
@@ -7111,7 +7297,7 @@ void PatchKernel::consecutiveRenumber(long vertexOffset, long cellOffset, long i
  */
 int PatchKernel::getDumpVersion() const
 {
-	const int KERNEL_DUMP_VERSION = 11;
+	const int KERNEL_DUMP_VERSION = 12;
 
 	return (KERNEL_DUMP_VERSION + _getDumpVersion());
 }
@@ -7200,9 +7386,20 @@ bool PatchKernel::dump(std::ostream &stream) const
 	}
 
 	// Index generators
-	m_vertexIdGenerator.dump(stream);
-	m_cellIdGenerator.dump(stream);
-	m_interfaceIdGenerator.dump(stream);
+	utils::binary::write(stream, (bool) m_vertexIdGenerator);
+	if (m_vertexIdGenerator) {
+		m_vertexIdGenerator->dump(stream);
+	}
+
+	utils::binary::write(stream, (bool) m_interfaceIdGenerator);
+	if (m_interfaceIdGenerator) {
+		m_interfaceIdGenerator->dump(stream);
+	}
+
+	utils::binary::write(stream, (bool) m_cellIdGenerator);
+	if (m_cellIdGenerator) {
+		m_cellIdGenerator->dump(stream);
+	}
 
 	// The patch has been dumped successfully
 	return true;
@@ -7298,9 +7495,23 @@ void PatchKernel::restore(std::istream &stream, bool reregister)
 	}
 
 	// Index generators
-	m_vertexIdGenerator.restore(stream);
-	m_cellIdGenerator.restore(stream);
-	m_interfaceIdGenerator.restore(stream);
+	bool hasVertexIdGenerator;
+	utils::binary::read(stream, hasVertexIdGenerator);
+	if (hasVertexIdGenerator) {
+		m_vertexIdGenerator->restore(stream);
+	}
+
+	bool hasInterfaceIdGenerator;
+	utils::binary::read(stream, hasInterfaceIdGenerator);
+	if (hasInterfaceIdGenerator) {
+		m_interfaceIdGenerator->restore(stream);
+	}
+
+	bool hasCellIdGenerator;
+	utils::binary::read(stream, hasCellIdGenerator);
+	if (hasCellIdGenerator) {
+		m_cellIdGenerator->restore(stream);
+	}
 }
 
 /*!

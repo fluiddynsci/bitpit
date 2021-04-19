@@ -31,6 +31,8 @@
 # include <unordered_set>
 # include <unordered_map>
 
+#include "bitpit_surfunstructured.hpp"
+
 #include "levelSetCommon.hpp"
 
 namespace bitpit{
@@ -38,7 +40,6 @@ namespace bitpit{
 namespace adaption{
     struct Info;
 }
-class SurfUnstructured;
 class SurfaceSkdTree;
 
 class SendBuffer;
@@ -64,15 +65,31 @@ public:
     int getSegmentInfo( const std::array<double,3> &p, long i, bool signd, double &d, std::array<double,3> &x, std::array<double,3> &n ) const;
 
 private:
+    typedef std::pair<long, int> SegmentVertexKey;
+
     const SurfUnstructured *m_surface;
     std::unique_ptr<const SurfUnstructured> m_ownedSurface;
     double m_featureAngle;
 
     std::unique_ptr<SurfaceSkdTree> m_searchTree;
 
-    PiercedStorage<std::vector< std::array<double,3>>> m_segmentVertexNormals;
+    PiercedStorage<std::size_t> m_segmentVertexOffset;
+
+    mutable PiercedStorage<bool> m_segmentNormalsValid;
+    mutable PiercedStorage<std::array<double,3>> m_segmentNormalsStorage;
+    mutable PiercedStorage<bool> m_unlimitedVertexNormalsValid;
+    mutable PiercedStorage<std::array<double,3>> m_unlimitedVertexNormalsStorage;
+    mutable std::vector<bool> m_limitedSegmentVertexNormalValid;
+    mutable std::unordered_map<SegmentVertexKey, std::array<double,3>, utils::hashing::hash<SegmentVertexKey>> m_limitedSegmentVertexNormalStorage;
 
     void setSurface( const SurfUnstructured *surface, double featureAngle);
+
+    std::array<double,3> computePseudoNormal( const SurfUnstructured::CellConstIterator &segmentIterator, const double *lambda ) const;
+    std::array<double,3> computeSurfaceNormal( const SurfUnstructured::CellConstIterator &segmentIterator, const double *lambda ) const;
+
+    std::array<double,3> computeSegmentNormal( const SurfUnstructured::CellConstIterator &segmentIterator ) const;
+    std::array<double,3> computeSegmentEdgeNormal( const SurfUnstructured::CellConstIterator &segmentIterator, int edge ) const;
+    std::array<double,3> computeSegmentVertexNormal( const SurfUnstructured::CellConstIterator &segmentIterator, int vertex, bool limited ) const;
 
 };
 
@@ -123,7 +140,6 @@ class LevelSetSegmentation : public LevelSetCachedObject {
 # endif
 
     void                                        getBoundingBox( std::array<double,3> &, std::array<double,3> &) const override;
-    bool                                        seedNarrowBand( LevelSetCartesian *, std::vector<std::array<double,3>> &, double, std::vector<long> &);
 
     void                                        computeLSInNarrowBand( LevelSetCartesian *, bool);
     void                                        computeLSInNarrowBand( LevelSetOctree *, bool);

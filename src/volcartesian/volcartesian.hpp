@@ -142,10 +142,15 @@ public:
 	std::array<int, 3> getVertexCartesianId(const std::array<int, 3> &cellIjk, int vertex) const;
 	bool isVertexCartesianIdValid(const std::array<int, 3> &ijk) const;
 
+	std::array<int, 3> getCellFaceNeighsCartesianId(long id, int face) const;
+	long getCellFaceNeighsLinearId(long id, int face) const;
+
 protected:
 	VolCartesian(const VolCartesian &other) = default;
 
 	std::vector<adaption::Info> _spawn(bool trackSpawn) override;
+
+	void _updateAdjacencies() override;
 
 	void _updateInterfaces() override;
 
@@ -153,9 +158,9 @@ protected:
 	void _dump(std::ostream &stream) const override;
 	void _restore(std::istream &stream) override;
 
-	void _findCellFaceNeighs(long id, int face, const std::vector<long> &blackList, std::vector<long> *neighs) const override;
-	void _findCellEdgeNeighs(long id, int edge, const std::vector<long> &blackList, std::vector<long> *neighs) const override;
-	void _findCellVertexNeighs(long id, int vertex, const std::vector<long> &blackList, std::vector<long> *neighs) const override;
+	void _findCellFaceNeighs(long id, int face, const std::vector<long> *blackList, std::vector<long> *neighs) const override;
+	void _findCellEdgeNeighs(long id, int edge, const std::vector<long> *blackList, std::vector<long> *neighs) const override;
+	void _findCellVertexNeighs(long id, int vertex, const std::vector<long> *blackList, std::vector<long> *neighs) const override;
 
 private:
 	MemoryMode m_memoryMode;
@@ -195,10 +200,6 @@ private:
 	void addVertices();
 
 	void addCells();
-
-	void addInterfaces();
-	std::array<int, 3> getInterfaceCountDirection(int direction);
-	void addInterfacesDirection(int direction);
 
 	double evalCellVolume() const;
 	double evalCellSize() const;

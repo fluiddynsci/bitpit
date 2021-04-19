@@ -203,7 +203,7 @@ double & Vertex::operator[](int coord_id)
 	\param coord_id is the index of the requested coordinate
 	\result Returns a constant reference to requested coordinate
 */
-double  Vertex::operator[](int coord_id) const
+const double & Vertex::operator[](int coord_id) const
 {
 	return m_coords[coord_id];
 }
@@ -236,6 +236,16 @@ long Vertex::getId() const
 void Vertex::setCoords(const std::array<double, 3> &coords)
 {
 	m_coords = coords;
+}
+
+/*!
+	Gets the coordinates of the vertex.
+
+	\return A pointer to the coordinates of the vertex
+*/
+std::array<double, 3> & Vertex::getCoords()
+{
+	return m_coords;
 }
 
 /*!

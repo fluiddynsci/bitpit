@@ -81,7 +81,7 @@ void _projectPointsTriangle( int nPoints, array3D const *points, array3D const &
         ++points;
     }
 
-    int info =  LAPACKE_dposv( LAPACK_COL_MAJOR, 'U', 2, nPoints, A.data(), 2, B, 2 );
+    int info =  LAPACKE_dposv_work( LAPACK_COL_MAJOR, 'U', 2, nPoints, A.data(), 2, B, 2 );
     assert( info == 0 );
     BITPIT_UNUSED( info );
 
@@ -132,7 +132,7 @@ void _projectPointsPlane( int nPoints, array3D const *points, array3D const &Q0,
         ++points;
     }
 
-    int info =  LAPACKE_dposv( LAPACK_COL_MAJOR, 'U', 2, nPoints, A.data(), 2, B, 2 );
+    int info =  LAPACKE_dposv_work( LAPACK_COL_MAJOR, 'U', 2, nPoints, A.data(), 2, B, 2 );
     assert( info == 0 );
     BITPIT_UNUSED( info );
 
@@ -671,17 +671,33 @@ bool validBarycentric(double const *lambdaPtr, int n )
  * Flag = 1 Point coincides with the first vertex or is positioned befor the line
  * Flag = 2 Point coincides with the second vertex or is positioned after the line
  * \param[in] lambda barycentric coordinates of point
+ * \param[in] tolerance tolerance used for comparisons
  * \return flag
  */
-int convertBarycentricToFlagSegment( std::array<double,2> const &lambda)
+int convertBarycentricToFlagSegment( std::array<double,2> const &lambda, double tolerance)
+{
+
+    return convertBarycentricToFlagSegment( lambda.data(), tolerance);
+}
+
+/*!
+ * Converts barycentric coordinates of a point on a segment to a flag that indicates where the point lies.
+ * Flag = 0 Point lies within the segment
+ * Flag = 1 Point coincides with the first vertex or is positioned befor the line
+ * Flag = 2 Point coincides with the second vertex or is positioned after the line
+ * \param[in] lambda barycentric coordinates of point
+ * \param[in] tolerance tolerance used for comparisons
+ * \return flag
+ */
+int convertBarycentricToFlagSegment( const double *lambda, double tolerance)
 {
 
     assert( validBarycentric(&lambda[0],2) );
 
-    if (lambda[0]>=1.) {
+    if ( lambda[0] > 1. || utils::DoubleFloatingEqual()( lambda[0], 1., tolerance ) ) {
         return 1;
 
-    } else if (lambda[1]>=1.) {
+    } else if ( lambda[1] > 1. || utils::DoubleFloatingEqual()( lambda[1], 1., tolerance ) ) {
         return 2;
 
     } 
@@ -692,83 +708,87 @@ int convertBarycentricToFlagSegment( std::array<double,2> const &lambda)
 /*!
  * Converts barycentric coordinates of a point on a triangle to a flag that indicates where the point lies.
  * Flag = 0 Point lies within the triangle
- * Flag = i Point coincides with the ith vertex of triangle or lies within the area spanned by the edges incident in the ith vertex
- * Flag = -i Point lies on the edge starting from the ith vertex and connecting the following vertex in clockwise direction or in its shaddowed area
+ * Flag = i Point coincides with the (ith - 1) vertex of triangle or lies within the area spanned by the edges incident in the (ith - 1) vertex
+ * Flag = -i Point lies on the edge starting from the (ith - 1) vertex and connecting the following vertex in clockwise direction or in its shaddowed area
  * \param[in] lambda barycentric coordinates of point
+ * \param[in] tolerance tolerance used for comparisons
  * \return flag
  */
-int convertBarycentricToFlagTriangle( array3D const &lambda)
+int convertBarycentricToFlagTriangle( array3D const &lambda, double tolerance)
 {
+    return convertBarycentricToFlagPolygon( 3, lambda.data(), tolerance);
+}
 
-    assert( validBarycentric(&lambda[0],3) );
-
-    int count = 0;
-    std::array<int,2> zeros = {{0,0}};
-
-    for( int i=0; i<3; ++i){
-        if ( lambda[i] <= 0.) {
-            zeros[count] = i;
-            ++count;
-        }
-    }
-
-    if( count == 1){
-        int vertex0 = (zeros[0] +1) %3;
-        count = -(vertex0+1);
-
-    } else if (count == 2) {
-        count = 3 -zeros[0] -zeros[1] +1;
-
-    }
-
-    return count;
+/*!
+ * Converts barycentric coordinates of a point on a triangle to a flag that indicates where the point lies.
+ * Flag = 0 Point lies within the triangle
+ * Flag = i Point coincides with the (ith - 1) vertex of triangle or lies within the area spanned by the edges incident in the (ith - 1) vertex
+ * Flag = -i Point lies on the edge starting from the (ith - 1) vertex and connecting the following vertex in clockwise direction or in its shaddowed area
+ * \param[in] lambda barycentric coordinates of point
+ * \param[in] tolerance tolerance used for comparisons
+ * \return flag
+ */
+int convertBarycentricToFlagTriangle( const double *lambda, double tolerance)
+{
+    return convertBarycentricToFlagPolygon( 3, lambda, tolerance);
 }
 
 /*!
  * Converts barycentric coordinates of a point on a convex polygon to a flag that indicates where the point lies.
  * Flag = 0 Point lies within the simplex
- * Flag = i Point coincides with the ith vertex of simplex or lies within the area spanned by the edges incident in the ith vertex
- * Flag = -i Point lies on the edge starting from the ith vertex and connecting the following vertex in clockwise direction or in its shaddowed area
+ * Flag = i Point coincides with the (ith - 1) vertex of simplex or lies within the area spanned by the edges incident in the (ith - 1) vertex
+ * Flag = -i Point lies on the edge starting from the (ith - 1) vertex and connecting the following vertex in counter-clockwise direction or in its shaddowed area
  * \param[in] lambda barycentric coordinates of point
+ * \param[in] tolerance tolerance used for comparisons
  * \return flag
  */
-int convertBarycentricToFlagPolygon( std::vector<double> const &lambda)
+int convertBarycentricToFlagPolygon( std::vector<double> const &lambda, double tolerance)
 {
-    return convertBarycentricToFlagPolygon( lambda.size(), lambda.data());
+    return convertBarycentricToFlagPolygon( lambda.size(), lambda.data(), tolerance);
 }
 
 /*!
  * Converts barycentric coordinates of a point on a convex polygon to a flag that indicates where the point lies.
  * Flag = 0 Point lies within the simplex
- * Flag = i Point coincides with the ith vertex of simplex or lies within the area spanned by the edges incident in the ith vertex
- * Flag = -i Point lies on the edge starting from the ith vertex and connecting the following vertex in clockwise direction or in its shaddowed area
+ * Flag = i Point coincides with the (ith - 1) vertex of simplex or lies within the area spanned by the edges incident in the (ith - 1) vertex
+ * Flag = -i Point lies on the edge starting from the (ith - 1) vertex and connecting the following vertex in counter-clockwise direction or in its shaddowed area
  * \param[in] nLambda number of barycentric coordinates of point
  * \param[in] lambda barycentric coordinates of point
+ * \param[in] tolerance tolerance used for comparisons
  * \return flag
  */
-int convertBarycentricToFlagPolygon( std::size_t nLambda, double const *lambda)
+int convertBarycentricToFlagPolygon( std::size_t nLambda, double const *lambda, double tolerance)
 {
-
-    int count(0);
-    std::size_t firstPositive(nLambda);
 
     assert( validBarycentric(&lambda[0],nLambda) );
 
+    int count = 0;
+    std::size_t lastPositive = std::numeric_limits<std::size_t>::max();
     for( std::size_t i=0; i<nLambda; ++i){
-        if ( lambda[i] > 0.) {
-            firstPositive = std::min( firstPositive, i);
-            ++count;
+        if ( lambda[i] < 0. || utils::DoubleFloatingEqual()( lambda[i], 0., tolerance ) ) {
+            continue;
+        }
+
+        ++count;
+        if (count > 2) {
+            return 0;
+        }
+
+        if (lastPositive != 0 || i == 1) {
+            lastPositive = i;
         }
     }
 
     if( count == 1){
-        count = firstPositive +1;
+        count = lastPositive + 1;
 
     } else if (count==2) {
-        count = -(firstPositive+1);
+        if (lastPositive != 0) {
+            count = - lastPositive;
+        } else {
+            count = - nLambda;
+        }
 
-    } else {
-        count = 0;
     }
 
     return count;
@@ -1099,8 +1119,6 @@ array3D restrictPointTriangle( array3D const &Q0, array3D const &Q1, array3D con
 
     assert( validBarycentric(&lambda[0], 3) );
 
-    std::array<const array3D*,3> r = {{&Q0, &Q1, &Q2}};
-
     int count = 0;
     std::array<int,2> negatives = {{ 0, 0 }};
 
@@ -1113,8 +1131,10 @@ array3D restrictPointTriangle( array3D const &Q0, array3D const &Q1, array3D con
 
     if( count == 0){
         return reconstructPointFromBarycentricTriangle( Q0, Q1, Q2, lambda );
+    }
 
-    } else if( count == 1){
+    std::array<const array3D*,3> r = {{&Q0, &Q1, &Q2}};
+    if( count == 1){
         std::array<double,2>   lambdaLocal;
         int vertex0 = (negatives[0] +1) %3;
         int vertex1 = (vertex0     +1) %3;
@@ -1127,7 +1147,6 @@ array3D restrictPointTriangle( array3D const &Q0, array3D const &Q1, array3D con
 
     } else {
         int vertex0 = 3 -negatives[0] -negatives[1];
-
         int vertex1 = (vertex0 +1) %3;
         int vertex2 = (vertex1 +1) %3;
 

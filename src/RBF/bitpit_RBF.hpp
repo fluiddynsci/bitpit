@@ -22,16 +22,16 @@
  *
  \*---------------------------------------------------------------------------*/
 
+#ifndef __BITPIT_MODULE_RBF_HPP__
+#define __BITPIT_MODULE_RBF_HPP__
+#include "moduleBegin.hpp"
+
 /*!
  * @defgroup RBF Radial Basis Functions (RBF)
  *
  */
 
-#ifndef __BITPIT_MODULE_RBF_HPP__
-#define __BITPIT_MODULE_RBF_HPP__
-
-#include "bitpit_version.hpp"
-
 #include "rbf.hpp"
 
+#include "moduleEnd.hpp"
 #endif

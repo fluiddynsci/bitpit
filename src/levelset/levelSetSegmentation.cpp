@@ -107,65 +107,50 @@ const SurfaceSkdTree & SegmentationKernel::getSearchTree() const {
  */
 void SegmentationKernel::setSurface( const SurfUnstructured *surface, double featureAngle){
 
+    // Check if adjacencies are built
+    if (surface->getAdjacenciesBuildStrategy() == SurfUnstructured::ADJACENCIES_NONE) {
+        throw std::runtime_error ("Segmentation needs adjacencies!") ;
+    }
+
+    // Surface information
     m_surface      = surface;
     m_featureAngle = featureAngle;
 
-    double tol = m_surface->getTol() ;
-
-    m_segmentVertexNormals.setStaticKernel(&m_surface->getCells());
-
-    std::vector<long> vertexNeighbours ;
-    std::vector<std::array<double,3>> limitedVertexNormals ;
+    // Check if segment is supported
     for( SurfUnstructured::CellConstIterator segmentItr = m_surface->cellConstBegin(); segmentItr != m_surface->cellConstEnd(); ++segmentItr ){
-        long segmentId = segmentItr.getId() ;
-        std::size_t segmentRawId = segmentItr.getRawIndex() ;
-        const Cell &segment = *segmentItr;
-        ElementType segmentType = segment.getType() ;
-        int nSegmentVertices = segment.getVertexCount() ;
-        std::vector<std::array<double,3>> *segmentVertexNormals = m_segmentVertexNormals.rawData(segmentRawId);
-
-        // Check if segment is supported
-        bool segmentSupported ;
-        switch (segmentType) {
+        switch (segmentItr->getType()) {
 
         case ElementType::VERTEX :
         case ElementType::LINE :
         case ElementType::TRIANGLE :
-            segmentSupported = true ;
             break ;
 
         default:
-            segmentSupported = false ;
+            throw std::runtime_error ("levelset: only segments and triangles supported in LevelSetSegmentation!") ;
             break ;
 
         }
-
-        if ( !segmentSupported ) {
-            throw std::runtime_error ("levelset: only segments and triangles supported in LevelSetSegmentation!") ;
-        }
-
-        // Evaluate segment vertex normals
-        //
-        // Normals are initialized with unlimited normals, if the segment is
-        // misalign they will be replaced with limited normals.
-        (*segmentVertexNormals).resize(nSegmentVertices) ;
-        limitedVertexNormals.resize(nSegmentVertices) ;
-
-        double misalignment = 0. ;
-        for( int i = 0; i < nSegmentVertices; ++i ){
-            vertexNeighbours.clear();
-            m_surface->findCellVertexNeighs(segmentId, i, &vertexNeighbours);
-
-            (*segmentVertexNormals)[i] = m_surface->evalVertexNormal(segmentId, i, vertexNeighbours.size(), vertexNeighbours.data()) ;
-            limitedVertexNormals[i] = m_surface->evalLimitedVertexNormal(segmentId, i, vertexNeighbours.size(), vertexNeighbours.data(), m_featureAngle) ;
-
-            misalignment += norm2((*segmentVertexNormals)[i] - limitedVertexNormals[i]) ;
-        }
-
-        if( misalignment >= tol ){
-            segmentVertexNormals->swap(limitedVertexNormals);
-        }
     }
+
+    // Segment vertices information
+    m_segmentVertexOffset.setStaticKernel(&m_surface->getCells());
+
+    std::size_t nTotalSegmentVertices = 0;
+    for( auto itr = m_segmentVertexOffset.begin(); itr != m_segmentVertexOffset.end(); ++itr ){
+        *itr = nTotalSegmentVertices;
+        nTotalSegmentVertices += m_surface->getCells().rawAt(itr.getRawIndex()).getVertexCount();
+    }
+
+    // Normals
+    m_segmentNormalsValid.setStaticKernel(&m_surface->getCells());
+    m_segmentNormalsValid.fill(false);
+    m_segmentNormalsStorage.setStaticKernel(&m_surface->getCells());
+
+    m_unlimitedVertexNormalsValid.setStaticKernel(&m_surface->getVertices());
+    m_unlimitedVertexNormalsValid.fill(false);
+    m_unlimitedVertexNormalsStorage.setStaticKernel(&m_surface->getVertices());
+
+    m_limitedSegmentVertexNormalValid.resize(nTotalSegmentVertices);
 
     // Initialize search tree
     m_searchTree = std::unique_ptr<SurfaceSkdTree>(new SurfaceSkdTree(surface));
@@ -184,21 +169,22 @@ void SegmentationKernel::setSurface( const SurfUnstructured *surface, double fea
  */
 int SegmentationKernel::getSegmentInfo( const std::array<double,3> &pointCoords, long segmentId, bool signd, double &distance, std::array<double,3> &gradient, std::array<double,3> &normal ) const {
 
+    // Segment information
     SurfUnstructured::CellConstIterator segmentIterator = m_surface->getCellConstIterator(segmentId);
     const Cell &segment = *segmentIterator ;
     ElementType segmentType = segment.getType();
     ConstProxyVector<long> segmentVertexIds = segment.getVertexIds() ;
     int nSegmentVertices = segmentVertexIds.size() ;
-    const std::vector<std::array<double,3>> &segmentVertexNormals = m_segmentVertexNormals.rawAt(segmentIterator.getRawIndex());
 
+    // Projct the point on the surface and evaluate the point-projeciont vector
     BITPIT_CREATE_WORKSPACE(lambda, double, nSegmentVertices, ReferenceElementInfo::MAX_ELEM_VERTICES);
-    std::array<double,3> projectionCoords;
+    std::array<double,3> pointProjectionVector = pointCoords;
     switch (segmentType) {
 
     case ElementType::VERTEX :
     {
         long id = segmentVertexIds[0] ;
-        projectionCoords = m_surface->getVertexCoords(id);
+        pointProjectionVector -= m_surface->getVertexCoords(id);
 
         break;
     }
@@ -207,7 +193,7 @@ int SegmentationKernel::getSegmentInfo( const std::array<double,3> &pointCoords,
     {
         long id0 = segmentVertexIds[0] ;
         long id1 = segmentVertexIds[1] ;
-        projectionCoords = CGElem::projectPointSegment( pointCoords, m_surface->getVertexCoords(id0), m_surface->getVertexCoords(id1), lambda);
+        pointProjectionVector -= CGElem::projectPointSegment( pointCoords, m_surface->getVertexCoords(id0), m_surface->getVertexCoords(id1), lambda);
 
         break;
     }
@@ -217,7 +203,7 @@ int SegmentationKernel::getSegmentInfo( const std::array<double,3> &pointCoords,
         long id0 = segmentVertexIds[0] ;
         long id1 = segmentVertexIds[1] ;
         long id2 = segmentVertexIds[2] ;
-        projectionCoords = CGElem::projectPointTriangle( pointCoords, m_surface->getVertexCoords(id0), m_surface->getVertexCoords(id1), m_surface->getVertexCoords(id2), lambda );
+        pointProjectionVector -= CGElem::projectPointTriangle( pointCoords, m_surface->getVertexCoords(id0), m_surface->getVertexCoords(id1), m_surface->getVertexCoords(id2), lambda );
 
         break;
     }
@@ -230,28 +216,40 @@ int SegmentationKernel::getSegmentInfo( const std::array<double,3> &pointCoords,
 
     }
 
-    if (segmentType != ElementType::VERTEX) {
-        normal = lambda[0] * segmentVertexNormals[0] ;
-        for (int i = 1; i < nSegmentVertices; ++i) {
-            normal += lambda[i] * segmentVertexNormals[i] ;
-        }
-        normal /= norm2(normal) ;
+    // Compute surface normal
+    normal = computeSurfaceNormal(segmentIterator, lambda);
+
+    // Evaluate distance from surface
+    distance = norm2(pointProjectionVector);
+
+    // Check if the point lies on the segmentation
+    //
+    // If the distance is zero, the point and the projection are coincident,
+    // this means that the point lies on the segmentation.
+    double distanceTolerance = m_surface->getTol();
+    bool pointOnSegmentation = utils::DoubleFloatingEqual()(distance, 0., distanceTolerance, distanceTolerance);
+
+    // Evaluate levelset gradient
+    if (!pointOnSegmentation) {
+        gradient = pointProjectionVector / distance;
     } else {
-        normal.fill(0.);
+        if (signd) {
+            gradient = normal;
+        } else {
+            gradient = {{0., 0., 0.}};
+        }
     }
 
-    gradient = pointCoords-projectionCoords;
-    distance = norm2(gradient); 
-    gradient /= distance;
-
-    // the sign is computed by determining the side of point p
-    // with respect to the normal plane 
-    int s = sign( dotProduct(gradient, normal) );
-
-    // If the point lies on the normal plane (s = 0), but its distance is
-    // finite the sign must be evaluated considering the curvature of the
-    // surface. This is not implemented yet.
-    if(s==0 && distance>0){
+    // Evaluate levelset sign
+    //
+    // The sign is computed by determining the side of the point with respect
+    // to the normal plane. The sign will be zero if the point lies exaclty
+    // on the segmentation or on the normal plane. In the latter case the sign
+    // must be evaluated taking into account the the curvature of the surface.
+    // However, this is not yet implemented.
+    std::array<double, 3> pseudoNormal = computePseudoNormal(segmentIterator, lambda);
+    int s = sign( dotProduct(pointProjectionVector, pseudoNormal) );
+    if (!pointOnSegmentation && s == 0) {
         distance = levelSetDefaults::VALUE;
         gradient = levelSetDefaults::GRADIENT;
         normal   = levelSetDefaults::GRADIENT;
@@ -259,15 +257,220 @@ int SegmentationKernel::getSegmentInfo( const std::array<double,3> &pointCoords,
         return 1;
     }
 
+    // Use sign to update levelset information
+    //
     // If signed distance are computed, the distance value and gradient
     // need to be changed accordingly. If unsigned distance are computed
     // the orientation of the suraface normal is discarded and in order
     // to agnostic with repect the two sides of the surface
-    distance *= (double) ( signd *s + (!signd) *1);
-    gradient *= (double) ( signd *s + (!signd) *1);
-    normal   *= (double) ( signd *1 + (!signd) *s);
+    if (s < 0) {
+        distance *= (double) ( signd *s + (!signd) *1);
+        gradient *= (double) ( signd *s + (!signd) *1);
+        normal   *= (double) ( signd *1 + (!signd) *s);
+    }
 
     return 0;
+}
+
+/*!
+ * Compute the pseudo-normal at specified point of the given triangle.
+ *
+ * The algorithm used to evaluate the pseudo-normal depends on the location
+ * of the point within the triangle:
+ *  - if the point coincides with a vertex, the pseudo-normal is evaluated
+ *    as the unlimited normal of the vertex;
+ *  - if the point lies on an edge, the pseudo-normal is the average of
+ *    the normals of the two segments sharing the edge;
+ *  - if the point is inside the segment, the pseudo-normal is evaluated as
+ *    the normal of the segment.
+ *
+ * See "Signed Distance Computation Using the Angle Weighted Pseudo-normal",
+ * J. Andreas Bearentzen, Henrik Aanaes, IEEE Transactions on Visualization
+ * and Computer Graphics, 2005.
+ *
+ * To reduce computational times, normals of segments and vertices are cached.
+ *
+ * @param[in] segmentIterator is an iterator pointing to the segment
+ * @param[in] lambda are the barycentric coordinates of the point
+ * @return the pseudo-normal at specified point of the given triangle
+ */
+std::array<double,3> SegmentationKernel::computePseudoNormal( const SurfUnstructured::CellConstIterator &segmentIterator, const double *lambda ) const {
+
+    // Early return if the segment is a point
+    const Cell &segment = *segmentIterator;
+    ElementType segmentType = segment.getType();
+    if (segmentType == ElementType::VERTEX) {
+        return {{0., 0., 0.}};
+    }
+
+    // Evaluate pseudo normal
+    int positionFlag;
+    if (segmentType == ElementType::LINE) {
+        positionFlag = CGElem::convertBarycentricToFlagSegment(lambda, m_surface->getTol());
+    } else {
+        int nSegmentVertices = segment.getVertexCount();
+        positionFlag = CGElem::convertBarycentricToFlagPolygon(nSegmentVertices, lambda, m_surface->getTol());
+    }
+
+    std::array<double,3> pseudoNormal;
+    if (positionFlag == 0) {
+        pseudoNormal = computeSegmentNormal(segmentIterator);
+    } else if (positionFlag > 0) {
+        int vertex = positionFlag - 1;
+        pseudoNormal = computeSegmentVertexNormal(segmentIterator, vertex, false);
+    } else if (positionFlag < 0) {
+        int edge = (- positionFlag) - 1;
+        pseudoNormal = computeSegmentEdgeNormal(segmentIterator, edge);
+    }
+
+    return pseudoNormal;
+}
+
+/*!
+ * Compute the surface-normal at specified point of the given triangle.
+ *
+ * Surface-normal is evaluated interpolating the unlimited vertex normals at
+ * the specified point.
+ *
+ * To reduce computational times, normals of vertices are cached.
+ *
+ * @param[in] segmentIterator is an iterator pointing to the segment
+ * @param[in] lambda are the barycentric coordinates of the point
+ * @return the surface-normal at specified point of the given triangle
+ */
+std::array<double,3> SegmentationKernel::computeSurfaceNormal( const SurfUnstructured::CellConstIterator &segmentIterator, const double *lambda ) const {
+
+    // Early return if the segment is a point
+    const Cell &segment = *segmentIterator;
+    ElementType segmentType = segment.getType();
+    if (segmentType == ElementType::VERTEX) {
+        return {{0., 0., 0.}};
+    }
+
+    // Evaluate surface normal
+    std::size_t nSegmentVertices = segment.getVertexCount();
+    std::array<double,3> surfaceNormal = lambda[0] * computeSegmentVertexNormal(segmentIterator, 0, true);
+    for (std::size_t i = 1; i < nSegmentVertices; ++i) {
+        surfaceNormal += lambda[i] * computeSegmentVertexNormal(segmentIterator, i, true);
+    }
+    surfaceNormal /= norm2(surfaceNormal);
+
+    return surfaceNormal;
+}
+
+/*!
+ * Compute the normal of the specified triangle.
+ *
+ * To reduce computational times, normals of vertices are cached.
+ *
+ * @param[in] segmentIterator is an iterator pointing to the segment
+ * @return the normal of the specified triangle
+ */
+std::array<double,3> SegmentationKernel::computeSegmentNormal( const SurfUnstructured::CellConstIterator &segmentIterator ) const {
+
+    std::size_t segmentRawId = segmentIterator.getRawIndex();
+    std::array<double, 3> *segmentNormal = m_segmentNormalsStorage.rawData(segmentRawId);
+    if (!m_segmentNormalsValid.rawAt(segmentRawId)) {
+        *segmentNormal = m_surface->evalFacetNormal(segmentIterator->getId());
+        m_segmentNormalsValid.rawAt(segmentRawId) = true;
+    }
+
+    return *segmentNormal;
+}
+
+/*!
+ * Compute the normal of the specified triangle's edge.
+ *
+ * To reduce computational times, normals of vertices are cached.
+ *
+ * @param[in] segmentIterator is an iterator pointing to the segment
+ * @param[in] edge is the local index of the edge
+ * @return the normal of the specified triangle's edge
+ */
+std::array<double,3> SegmentationKernel::computeSegmentEdgeNormal( const SurfUnstructured::CellConstIterator &segmentIterator, int edge ) const {
+
+    long neighId = segmentIterator->getAdjacency(edge);
+    SurfUnstructured::CellConstIterator neighIterator = m_surface->getCellConstIterator(neighId);
+
+    std::array<double,3> normal = computeSegmentNormal(segmentIterator);
+    normal += computeSegmentNormal(neighIterator);
+    normal /= norm2(normal);
+
+    return normal;
+}
+
+/*!
+ * Compute the normal of the specified triangle's vertex.
+ *
+ * To reduce computational times, normals of vertices are cached.
+ *
+ * @param[in] segmentIterator is an iterator pointing to the segment
+ * @param[in] vertex is the local index of the vertex
+ * @param[in] limited controls is the limited or the unlimited normal will
+ * be evaluated
+ * @return the normal of the specified triangle's vertex
+ */
+std::array<double,3> SegmentationKernel::computeSegmentVertexNormal( const SurfUnstructured::CellConstIterator &segmentIterator, int vertex, bool limited ) const {
+
+    // Segment information
+    long segmentId = segmentIterator.getId();
+    long segmentRawId = segmentIterator.getRawIndex();
+    const Cell &segment = *segmentIterator;
+
+    // Update the cache
+    //
+    // Cache is updated for all the vertices of the segment.
+    long vertexId = segment.getVertexId(vertex);
+    std::size_t vertexRawId = m_surface->getVertices().getRawIndex(vertexId);
+    bool hasUnlimitedNormal = m_unlimitedVertexNormalsValid.rawAt(vertexRawId);
+
+    bool hasLimitedNormal = m_limitedSegmentVertexNormalValid[m_segmentVertexOffset.rawAt(segmentRawId) + vertex];
+
+    if (!hasUnlimitedNormal || !hasLimitedNormal) {
+        static std::vector<long> vertexNeighbours;
+        vertexNeighbours.clear();
+        m_surface->findCellVertexNeighs(segmentId, vertex, &vertexNeighbours);
+
+        std::array<double, 3> limitedVertexNormal;
+        std::array<double, 3> unlimitedVertexNormal;
+        if (hasUnlimitedNormal) {
+            limitedVertexNormal   = m_surface->evalLimitedVertexNormal(segmentId, vertex, vertexNeighbours.size(), vertexNeighbours.data(), m_featureAngle) ;
+            unlimitedVertexNormal = m_unlimitedVertexNormalsStorage.rawAt(vertexRawId);
+        } else {
+            m_surface->evalVertexNormals(segmentId, vertex, vertexNeighbours.size(), vertexNeighbours.data(), m_featureAngle, &unlimitedVertexNormal, &limitedVertexNormal) ;
+        }
+
+        // Store vertex limited normal
+        //
+        // Both limited and unlimited normal are evaluated, however limited
+        // normal is only stored if its misalignment with respect to the
+        // unlimited normal is greater than a defined tolerance.
+        if( !hasLimitedNormal ){
+            double misalignment = norm2(unlimitedVertexNormal - limitedVertexNormal) ;
+            if( misalignment >= m_surface->getTol() ){
+                std::pair<long, int> segmentVertexKey = std::make_pair(segmentId, vertex);
+                m_limitedSegmentVertexNormalStorage.insert({segmentVertexKey, std::move(limitedVertexNormal)}) ;
+            }
+            m_limitedSegmentVertexNormalValid[m_segmentVertexOffset.rawAt(segmentRawId) + vertex] = true;
+        }
+
+        // Store vertex unlimited normal
+        if ( !hasUnlimitedNormal ) {
+            m_unlimitedVertexNormalsStorage.rawAt(vertexRawId) = std::move(unlimitedVertexNormal);
+            m_unlimitedVertexNormalsValid.rawAt(vertexRawId) = true ;
+        }
+    }
+
+    // Get the normal from the cache
+    if (limited) {
+        std::pair<long, int> segmentVertexKey = std::make_pair(segmentId, vertex);
+        auto limitedSegmentVertexNormal = m_limitedSegmentVertexNormalStorage.find(segmentVertexKey);
+        if (limitedSegmentVertexNormal != m_limitedSegmentVertexNormalStorage.end()) {
+            return limitedSegmentVertexNormal->second;
+        }
+    }
+
+    return m_unlimitedVertexNormalsStorage.rawAt(vertexRawId);
 }
 
 /*!
@@ -495,49 +698,6 @@ double LevelSetSegmentation::getMaxSurfaceFeatureSize( ) const {
     return maximumSize;
 }
 
-
-/*!
- * Finds seed points in narrow band within a cartesian mesh for one simplex
- * @param[in] visitee cartesian mesh 
- * @param[in] VS Simplex
- * @param[in] searchRadius search radius
- * @param[out] I indices of seed points
- */
-bool LevelSetSegmentation::seedNarrowBand( LevelSetCartesian *visitee, std::vector<std::array<double,3>> &VS, double searchRadius, std::vector<long> &I){
-
-    VolCartesian                        &mesh = *(static_cast<VolCartesian*>(visitee->getMesh()));
-
-    bool                                found(false) ;
-    int                                 dim( mesh.getDimension() ) ;
-    std::array<double,3>                B0, B1;
-    std::vector<std::array<double,3>>   VP ;
-
-    mesh.getBoundingBox(B0, B1) ;
-
-    for( int i=0; i<dim; ++i){
-        B0[i] -= searchRadius;
-        B1[i] += searchRadius;
-    }
-
-    I.clear() ;
-
-    for( const auto &P : VS){
-        if(  CGElem::intersectPointBox( P, B0, B1, dim ) ) {
-            I.push_back( mesh.locateClosestCell(P) );
-            found =  true ;
-        }
-    }
-
-    if( !found && CGElem::intersectBoxPolygon( B0, B1, VS, false, true, true, VP, dim ) ) {
-        for( const auto &P : VP){
-            I.push_back( mesh.locateClosestCell(P) );
-            found = true ;
-        }
-    }
-
-    return found ;
-}
-
 /*!
  * Computes axis aligned bounding box of object
  * @param[out] minP minimum point
@@ -611,149 +771,125 @@ void LevelSetSegmentation::updateLSInNarrowBand( const std::vector<adaption::Inf
  */
 void LevelSetSegmentation::computeLSInNarrowBand( LevelSetCartesian *visitee, bool signd){
 
-    VolCartesian &mesh = *(visitee->getCartesianMesh() ) ;
-    double searchRadius = m_narrowBand;
+    log::cout() << " Compute levelset on cartesian mesh"  << std::endl;
 
-    if(searchRadius<0.){
-        for( int d=0; d < mesh.getDimension(); ++d){
-            searchRadius = std::max( searchRadius, mesh.getSpacing(d) ) ;
+    // Get mesh information
+    VolCartesian &mesh = *(visitee->getCartesianMesh() ) ;
+    int meshDimension = mesh.getDimension();
+
+    // Get surface information
+    const SurfUnstructured &surface = m_segmentation->getSurface();
+
+    // Define search radius
+    double searchRadius = m_narrowBand;
+    if (searchRadius < 0.) {
+        for (int d = 0; d < meshDimension; ++d) {
+            searchRadius = std::max(searchRadius, mesh.getSpacing(d));
         }
     }
 
-    std::vector<std::array<double,3>>       VS;
+    // Define mesh bounding box
+    //
+    // The bounding box is inflated be the search radius.
+    std::array<double,3> meshMinPoint;
+    std::array<double,3> meshMaxPoint;
+    mesh.getBoundingBox(meshMinPoint, meshMaxPoint) ;
+    for (int d = 0; d < meshDimension; ++d) {
+        meshMinPoint[d] -= searchRadius;
+        meshMaxPoint[d] += searchRadius;
+    }
 
-    const SurfUnstructured                  &m_surface = m_segmentation->getSurface();
+    // Initialize process list
+    //
+    // Process list is initialized with cells that are certainly inside the
+    // narrow band. Those cells are the one that contain the vertices of the
+    // segments or the intersection between the segments and the bounding box
+    // of the patch.
+    std::unordered_set<long> processList;
 
-    std::vector<long>                       stack, temp, neighs, flag( mesh.getCellCount(), -1);
-
-    std::vector< std::array<double,3> >     cloud ;
-    std::vector<double>                     cloudDistance;
-
-    double distance;
-    std::array<double,3>  gradient, normal;
-
-    stack.reserve(128) ;
-    temp.reserve(128) ;
-
-    log::cout() << " Compute levelset on cartesian mesh"  << std::endl;
-
-    for (const Cell &segment : m_surface.getCells()) {
-        // get segment info
-        long segmentId = segment.getId();
-        ElementType segmentType = segment.getType();
+    std::vector<std::array<double,3>> intersectionPoints;
+    std::vector<std::array<double,3>> segmentVertexCoords;
+    for (const Cell &segment : surface.getCells()) {
+        // Get segment info
         ConstProxyVector<long> segmentVertexIds = segment.getVertexIds();
         std::size_t nSegmentVertices = segmentVertexIds.size();
 
-        // get segment coordinates
-        VS.resize(nSegmentVertices);
-        m_surface.getVertexCoords(nSegmentVertices, segmentVertexIds.data(), VS.data());
+        // Get segment coordinates
+        segmentVertexCoords.resize(nSegmentVertices);
+        surface.getVertexCoords(nSegmentVertices, segmentVertexIds.data(), segmentVertexCoords.data());
 
-        // compute initial seeds, ie the cells where the vertices
-        // of the surface element fall in and add them to stack
-        seedNarrowBand( visitee, VS, searchRadius, stack );
-
-        // propagate from seed
-        size_t stackSize = stack.size();
-        while (stackSize > 0) {
-
-            // put the cell centroids of the stack into a vector
-            // and calculate the distances to the cloud
-            cloud.resize(stackSize) ;
-            cloudDistance.resize(stackSize);
-
-            for( size_t k = 0; k < stackSize; ++k) {
-                long cell = stack[k];
-                cloud[k] = visitee->computeCellCentroid(cell) ;
+        // Add to the process list the cells that contain the vertices of the
+        // segment or the intersection between the segment and the bounding box
+        // of the patch.
+        int nInnerVertices = 0;
+        for (const std::array<double,3> &vertexPoint : segmentVertexCoords) {
+            long cellId = mesh.locatePoint(vertexPoint);
+            if (cellId < 0) {
+                continue;
             }
 
-            switch (segmentType) {
+            processList.insert(cellId);
+            ++nInnerVertices;
+        }
 
-            case ElementType::VERTEX :
-            {
-                for( size_t k=0; k<stackSize; ++k){
-                    cloudDistance[k] = norm2( cloud[k]-VS[0]);
+        if (nInnerVertices == 0) {
+            if (CGElem::intersectBoxPolygon(meshMinPoint, meshMaxPoint, segmentVertexCoords, false, true, true, intersectionPoints, meshDimension)) {
+                for (const std::array<double,3> &intersectionPoint : intersectionPoints){
+                    long cellId = mesh.locateClosestCell(intersectionPoint);
+                    assert(cellId >= 0);
+                    processList.insert(cellId);
                 }
-                break;
             }
+        }
+    }
 
-            case ElementType::LINE:
-            {
-                for( size_t k=0; k<stackSize; ++k){
-                    cloudDistance[k] = CGElem::distancePointSegment( cloud[k], VS[0], VS[1]);
-                }
-                break;
+    // Evaluate the levelset within the narrow band
+    //
+    // The initial process list is gradually expanded considering all the
+    // neighbours with a distance less than the search radius.
+    std::unordered_set<long> alreadyProcessed;
+    while (!processList.empty()) {
+        // Get the cell to process
+        long cellId = *(processList.begin());
+        processList.erase(cellId);
+        alreadyProcessed.insert(cellId);
+
+        // Find segment associated to the cell
+        std::array<double,3> cellCentroid = visitee->computeCellCentroid(cellId);
+
+        long segmentId;
+        double distance;
+        m_segmentation->getSearchTree().findPointClosestCell(cellCentroid, searchRadius, &segmentId, &distance);
+        if(segmentId < 0){
+            continue;
+        }
+
+        // Evaluate levelset information
+        std::array<double, 3> gradient;
+        std::array<double, 3> normal;
+        int error = m_segmentation->getSegmentInfo(cellCentroid, segmentId, signd, distance, gradient, normal);
+        if (error) {
+            throw std::runtime_error ("Unable to extract the levelset information from segment.");
+        }
+
+        PiercedVector<LevelSetInfo>::iterator lsInfoItr = m_ls.emplace(cellId) ;
+        lsInfoItr->value    = distance;
+        lsInfoItr->gradient = gradient;
+
+        PiercedVector<SurfaceInfo>::iterator infoItr = m_surfaceInfo.emplace(cellId);
+        infoItr->support = segmentId;
+        infoItr->normal = normal;
+
+        // Add cell neighbours to the process list
+        const Cell &cell = mesh.getCell(cellId);
+        const long *neighbours = cell.getAdjacencies() ;
+        int nNeighbours = cell.getAdjacencyCount() ;
+        for (int n = 0; n < nNeighbours; ++n) {
+            long neighId = neighbours[n];
+            if (alreadyProcessed.count(neighId) == 0) {
+                processList.insert(neighId);
             }
-
-            case ElementType::TRIANGLE:
-            {
-                cloudDistance = CGElem::distanceCloudTriangle( cloud, VS[0], VS[1], VS[2]); 
-                break;
-            }
-
-            default:
-            {
-                std::runtime_error ("Type of cell not supported.");
-                break;
-            }
-            }
-
-            // check each cell of cloud individually
-            for( size_t k = 0; k < stackSize; ++k) {
-
-                long &cellId = stack[k];
-                double &cellDistance = cloudDistance[k];
-
-                // consider only cells within the search radius
-                if ( cellDistance <= searchRadius ) {
-
-                    PiercedVector<LevelSetInfo>::iterator lsInfoItr = m_ls.find(cellId) ;
-                    if( lsInfoItr == m_ls.end() ){
-                        lsInfoItr = m_ls.emplace(cellId) ;
-                    }
-
-                    // check if the computed distance is the closest distance
-                    if( cellDistance < std::abs(lsInfoItr->value) ){
-
-                        // compute all necessary information and store them
-                        //
-                        // If an error occures, there should exists another
-                        // segment from which the levelset information can
-                        // be extracted from.
-                        int error = m_segmentation->getSegmentInfo(cloud[k], segmentId, signd, distance, gradient, normal);
-                        if (!error) {
-                            lsInfoItr->value    = distance;
-                            lsInfoItr->gradient = gradient;
-
-                            auto infoItr = m_surfaceInfo.find(cellId) ;
-                            if( infoItr == m_surfaceInfo.end() ){
-                                infoItr = m_surfaceInfo.emplace(cellId) ;
-                            }
-                            infoItr->support = segmentId;
-                            infoItr->normal = normal;
-                        }
-                    }
-
-
-                    // the new stack is composed of all neighbours
-                    // of the old stack. Attention must be paid in 
-                    // order not to evaluate the same cell twice
-                    neighs.clear();
-                    mesh.findCellFaceNeighs(cellId, &neighs) ;
-                    for( const auto &  neigh : neighs){
-                        if( flag[neigh] != segmentId) {
-                            temp.push_back( neigh) ;
-                            flag[neigh] = segmentId ;
-                        }
-                    }
-
-                } //end if distance
-            }
-
-            stack.clear() ;
-            stack.swap( temp ) ;
-            stackSize = stack.size() ;
-
-        } //end while
+        }
     }
 }
 

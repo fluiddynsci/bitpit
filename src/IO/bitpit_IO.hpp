@@ -22,6 +22,10 @@
  *
  \*---------------------------------------------------------------------------*/
 
+#ifndef __BITPIT_MODULE_IO_HPP__
+#define __BITPIT_MODULE_IO_HPP__
+#include "moduleBegin.hpp"
+
 /*!
  * @defgroup IO Input/Output (IO)
  * @{
@@ -37,11 +41,6 @@
  * @}
  */
 
-#ifndef __BITPIT_MODULE_IO_HPP__
-#define __BITPIT_MODULE_IO_HPP__
-
-#include "bitpit_version.hpp"
-
 #include "binary_archive.hpp"
 #include "configuration.hpp"
 #include "index_generator.hpp"
@@ -52,4 +51,5 @@
 #include "GenericIO.hpp"
 #include "STL.hpp"
 
+#include "moduleEnd.hpp"
 #endif

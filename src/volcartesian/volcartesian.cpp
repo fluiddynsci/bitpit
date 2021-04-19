@@ -263,6 +263,52 @@ void VolCartesian::resetInterfaces()
 	m_nInterfaces = 0;
 }
 
+
+/*!
+	Internal function to update the adjacencies of the patch.
+
+	The function will always update the adjacencies of all the cells.
+*/
+void VolCartesian::_updateAdjacencies()
+{
+	// Partial updates are not supported
+	bool partialUpdate = false;
+	for (auto cellIterator = cellBegin(); cellIterator != cellEnd(); ++cellIterator) {
+		long cellId = cellIterator.getId();
+		if (!testCellAlterationFlags(cellId, FLAG_ADJACENCIES_DIRTY)) {
+			partialUpdate = true;
+			break;
+		}
+	}
+
+	if (partialUpdate) {
+		log::cout() << " It is not possible to partially update the adjacencies.";
+		log::cout() << " All adjacencies will be updated.";
+	}
+
+	// Update adjacencies
+	int nCellFaces = 2 * getDimension();
+	for (Cell &cell : getCells()) {
+		// Reset cell adjacencies
+		if (cell.getAdjacencyCount() != 0) {
+			cell.resetAdjacencies();
+		}
+
+		// Evaluate adjacencies
+		long cellId = cell.getId();
+		for (int face = 0; face < nCellFaces; ++face) {
+			// Identify face neighbour
+			long neighId = getCellFaceNeighsLinearId(cellId, face);
+			if (neighId < 0) {
+				continue;
+			}
+
+			// Add adjacency
+			cell.pushAdjacency(face, neighId);
+		}
+	}
+}
+
 /*!
 	Internal function to update the interfaces of the patch.
 
@@ -283,34 +329,96 @@ void VolCartesian::_updateInterfaces()
 
 	if (partialUpdate) {
 		log::cout() << " It is not possible to partially update the interfaces.";
-		log::cout() << " All interface will be updated.";
+		log::cout() << " All interfaces will be updated.";
 	}
 
 	// Count the total number of interfaces
 	m_nInterfaces = 0;
-	for (int n = 0; n < getDimension(); n++) {
-		std::array<int, 3> interfaceCount1D = getInterfaceCountDirection(n);
-
+	for (int d = 0; d < getDimension(); ++d) {
 		int nDirectionInterfaces = 1;
 		for (int n = 0; n < getDimension(); n++) {
-			nDirectionInterfaces *= interfaceCount1D[n];
+			int nDirectionInterfaces1D = m_nCells1D[n];
+			if (n == d) {
+				++nDirectionInterfaces1D;
+			}
+
+			nDirectionInterfaces *= nDirectionInterfaces1D;
 		}
 		m_nInterfaces += nDirectionInterfaces;
 	}
 
 	// Build interfaces
 	if (getMemoryMode() == MemoryMode::MEMORY_NORMAL) {
+		int nCellFaces = 2 * getDimension();
+
+		// Info on the interfaces
+		ElementType interfaceType = getInterfaceType();
+
+		const ReferenceElementInfo &interfaceTypeInfo = ReferenceElementInfo::getInfo(interfaceType);
+		const int nInterfaceVertices = interfaceTypeInfo.nVertices;
+
 		// Enable advanced editing
 		setExpert(true);
 
-		// Update interfaces
-		addInterfaces();
+		// Initialize interfaces
+		for (Cell &cell : getCells()) {
+			cell.setInterfaces(FlatVector2D<long>(nCellFaces, 1, Interface::NULL_ID));
+		}
+
+		// Build interfaces
+		for (Cell &cell : getCells()) {
+			long cellId = cell.getId();
+			for (int face = 0; face < nCellFaces; ++face) {
+				// Get neighbour information
+				//
+				// The interface between two cells needs to be processed only
+				// once. In order to ensure this, we build an interface if the
+				// faces is a border, or if the id of this cell is lower than
+				// the id of its neighbour.
+				long neighId;
+				if (cell.getAdjacencyCount(face) > 0) {
+					neighId = cell.getAdjacencies(face)[0];
+					if (neighId < cellId) {
+						continue;
+					}
+				} else {
+					neighId = Cell::NULL_ID;
+				}
+
+				// Create the interface
+				InterfaceIterator interfaceIterator = VolumeKernel::addInterface(interfaceType);
+				Interface &interface = *interfaceIterator;
+				long interfaceId = interface.getId();
+
+				// Set connectivity
+				ConstProxyVector<long> faceConnect = cell.getFaceConnect(face);
+				int connectSize = faceConnect.size();
+
+				std::unique_ptr<long[]> connect = std::unique_ptr<long[]>(new long[nInterfaceVertices]);
+				for (int k = 0; k < connectSize; ++k) {
+					connect[k] = faceConnect[k];
+				}
+				interface.setConnect(std::move(connect));
+
+				// Set owner data
+				interface.setOwner(cellId, face);
+				cell.setInterface(face, 0, interfaceId);
+
+				// Neighbour data
+				if (neighId >= 0) {
+					Cell &neigh = getCell(neighId);
+					int neighFace = 2 * std::floor(face / 2.) + (1 - face % 2);
+
+					interface.setNeigh(neighId, neighFace);
+					neigh.setInterface(neighFace, 0, interfaceId);
+				} else {
+					interface.unsetNeigh();
+				}
+			}
+		}
 
 		// Disable advanced editing
 		setExpert(false);
-	} else {
-		// Set interfaces build strategy
-		setInterfacesBuildStrategy(INTERFACES_AUTOMATIC);
 	}
 }
 
@@ -829,10 +937,6 @@ void VolCartesian::switchMemoryMode(MemoryMode mode)
 */
 void VolCartesian::setMemoryMode(MemoryMode mode)
 {
-	if (mode == m_memoryMode) {
-		return;
-	}
-
 	m_memoryMode = mode;
 }
 
@@ -880,9 +984,6 @@ std::vector<adaption::Info> VolCartesian::_spawn(bool trackSpawn)
 	// Definition of the mesh
 	addVertices();
 	addCells();
-	if (getInterfacesBuildStrategy() == INTERFACES_AUTOMATIC) {
-		addInterfaces();
-	}
 
 	// Disable advanced editing
 	setExpert(false);
@@ -981,145 +1082,6 @@ void VolCartesian::addCells()
 					cellConnect[6] = getVertexLinearId(i,     j + 1, k + 1);
 					cellConnect[7] = getVertexLinearId(i + 1, j + 1, k + 1);
 				}
-			}
-		}
-	}
-}
-
-/*!
-	Creates the interfaces of the patch.
-*/
-void VolCartesian::addInterfaces()
-{
-	log::cout() << "  >> Creating interfaces\n";
-
-	log::cout() << "    - Interface count: " << m_nInterfaces << "\n";
-
-	// Create interfaces
-	m_interfaces.reserve(m_nInterfaces);
-	for (int n = 0; n < getDimension(); n++) {
-		addInterfacesDirection(n);
-	}
-
-	// Set interfaces build strategy
-	setInterfacesBuildStrategy(INTERFACES_AUTOMATIC);
-}
-
-/*!
-	Get the interface ount for the given direction.
-
-	\param direction the method will count the interfaces normal to this
-	                 direction
-	\result The interface count for the given direction.
-*/
-std::array<int, 3> VolCartesian::getInterfaceCountDirection(int direction)
-{
-	std::array<int, 3> interfaceDirectionCount = m_nCells1D;
-	interfaceDirectionCount[direction]++;
-
-	return interfaceDirectionCount;
-}
-
-/*!
-	Creates the interfaces normal to the given direction.
-
-	\param direction the method will create the interfaces normal to this
-	                 direction
-*/
-void VolCartesian::addInterfacesDirection(int direction)
-{
-	log::cout() << "  >> Creating interfaces normal to direction " << direction << "\n";
-
-	// Info on the interfaces
-	ElementType interfaceType = getInterfaceType();
-
-	const ReferenceElementInfo &interfaceTypeInfo = ReferenceElementInfo::getInfo(interfaceType);
-	const int nInterfaceVertices = interfaceTypeInfo.nVertices;
-	std::array<int, 3> interfaceCount1D = getInterfaceCountDirection(direction);
-
-	// Counters
-	std::array<int, 3> counters = {{0, 0, 0}};
-	int &i = counters[Vertex::COORD_X];
-	int &j = counters[Vertex::COORD_Y];
-	int &k = counters[Vertex::COORD_Z];
-
-	// Creation of the interfaces
-	for (k = 0; (isThreeDimensional()) ? (k < interfaceCount1D[Vertex::COORD_Z]) : (k <= 0); k++) {
-		for (j = 0; j < interfaceCount1D[Vertex::COORD_Y]; j++) {
-			for (i = 0; i < interfaceCount1D[Vertex::COORD_X]; i++) {
-				InterfaceIterator interfaceIterator = VolumeKernel::addInterface(interfaceType);
-				Interface &interface = *interfaceIterator;
-
-				// Owner id
-				std::array<int, 3> ownerIJK(counters);
-				if (counters[direction] == (interfaceCount1D[direction] - 1)) {
-					ownerIJK[direction] -= 1;
-				}
-
-				long ownerId = getCellLinearId(ownerIJK);
-
-				// Neighbour id
-				long neighId;
-				if (counters[direction] != 0 && counters[direction] != interfaceCount1D[direction] - 1) {
-					std::array<int, 3> neighIJK(counters);
-					neighIJK[direction] -= 1;
-
-					neighId = getCellLinearId(neighIJK);
-				} else {
-					neighId = Element::NULL_ID;
-				}
-
-				// Owner data
-				Cell &owner = m_cells[ownerId];
-
-				int ownerFace = 2 * direction;
-				if (counters[direction] == interfaceCount1D[direction] - 1) {
-					ownerFace++;
-				}
-
-				interface.setOwner(owner.getId(), ownerFace);
-				owner.pushInterface(ownerFace, interface.getId());
-				owner.pushAdjacency(ownerFace, neighId);
-
-				// Neighbour data
-				if (counters[direction] != 0 && counters[direction] != interfaceCount1D[direction] - 1) {
-					Cell &neigh = m_cells[neighId];
-
-					int neighFace = 2 * direction + 1;
-
-					interface.setNeigh(neigh.getId(), neighFace);
-					neigh.pushInterface(neighFace, interface.getId());
-					neigh.pushAdjacency(neighFace, ownerId);
-				} else {
-					interface.unsetNeigh();
-				}
-
-				// Connectivity
-				std::unique_ptr<long[]> connect = std::unique_ptr<long[]>(new long[nInterfaceVertices]);
-				if (direction == Vertex::COORD_X) {
-					connect[0] = getVertexLinearId(i, j,     k);
-					connect[1] = getVertexLinearId(i, j + 1, k);
-					if (interfaceType == ElementType::PIXEL) {
-						connect[2] = getVertexLinearId(i, j + 1, k + 1);
-						connect[3] = getVertexLinearId(i, j,     k + 1);
-					}
-				} else if (direction == Vertex::COORD_Y) {
-					connect[0] = getVertexLinearId(i,     j,     k);
-					connect[1] = getVertexLinearId(i + 1, j,     k);
-					if (interfaceType == ElementType::PIXEL) {
-						connect[2] = getVertexLinearId(i + 1, j, k + 1);
-						connect[3] = getVertexLinearId(i,     j, k + 1);
-					}
-				} else if (direction == Vertex::COORD_Z) {
-					connect[0] = getVertexLinearId(i,     j,     k);
-					connect[1] = getVertexLinearId(i + 1, j,     k);
-					if (interfaceType == ElementType::PIXEL) {
-						connect[2] = getVertexLinearId(i + 1, j + 1, k);
-						connect[3] = getVertexLinearId(i,     j + 1, k);
-					}
-				}
-
-				interface.setConnect(std::move(connect));
 			}
 		}
 	}
@@ -1313,6 +1275,8 @@ std::array<int, 3> VolCartesian::locatePointCartesian(const std::array<double, 3
 		ijk[0] = -1;
 		ijk[1] = -1;
 		ijk[2] = -1;
+
+		return ijk;
 	}
 
 	ijk[0] = std::floor((point[Vertex::COORD_X] - m_minCoords[Vertex::COORD_X]) / m_cellSpacings[Vertex::COORD_X]);
@@ -1655,29 +1619,22 @@ bool VolCartesian::isVertexCartesianIdValid(const std::array<int, 3> &ijk) const
 	\param id is the id of the cell
 	\param face is a face of the cell
 	\param blackList is a list of cells that are excluded from the search.
-	The blacklist has to be a unique list of ordered cell ids.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
 	\param[in,out] neighs is the vector were the neighbours will be stored.
 	The vector is not cleared before adding the neighbours, it is extended
 	by appending all the neighbours found by this function
 */
-void VolCartesian::_findCellFaceNeighs(long id, int face, const std::vector<long> &blackList, std::vector<long> *neighs) const
+void VolCartesian::_findCellFaceNeighs(long id, int face, const std::vector<long> *blackList, std::vector<long> *neighs) const
 {
-	int neighSide      = face % 2;
-	int neighDirection = std::floor(face / 2);
-
-	std::array<int, 3> neighIjk(getCellCartesianId(id));
-	if (neighSide == 0) {
-		neighIjk[neighDirection]--;
-	} else {
-		neighIjk[neighDirection]++;
+	long neighId = getCellFaceNeighsLinearId(id, face);
+	if (neighId < 0) {
+		return;
+	} else if (blackList && utils::findInOrderedVector<long>(neighId, *blackList) != blackList->end()) {
+		return;
 	}
 
-	if (isCellCartesianIdValid(neighIjk)) {
-		long neighId = getCellLinearId(neighIjk);
-		if (utils::findInOrderedVector<long>(neighId, blackList) == blackList.end()) {
-			neighs->push_back(neighId);
-		}
-	}
+	neighs->push_back(neighId);
 }
 
 /*!
@@ -1688,13 +1645,14 @@ void VolCartesian::_findCellFaceNeighs(long id, int face, const std::vector<long
 	\param id is the id of the cell
 	\param edge is an edge of the cell
 	\param blackList is a list of cells that are excluded from the search.
-	The blacklist has to be a unique list of ordered cell ids.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
 	\param[in,out] neighs is the vector were the neighbours of the specified
 	cell for the given edge will be stored. The vector is not cleared before
 	adding the neighbours, it is extended by appending all the neighbours
 	found by this function
 */
-void VolCartesian::_findCellEdgeNeighs(long id, int edge, const std::vector<long> &blackList, std::vector<long> *neighs) const
+void VolCartesian::_findCellEdgeNeighs(long id, int edge, const std::vector<long> *blackList, std::vector<long> *neighs) const
 {
 	assert(isThreeDimensional());
 	if (!isThreeDimensional()) {
@@ -1705,7 +1663,7 @@ void VolCartesian::_findCellEdgeNeighs(long id, int edge, const std::vector<long
 	std::array<int, 3> diagNeighIjk(getCellCartesianId(id) + m_edgeNeighDeltas[edge]);
 	if (isCellCartesianIdValid(diagNeighIjk)) {
 		long diagNeighId = getCellLinearId(diagNeighIjk);
-		if (utils::findInOrderedVector<long>(diagNeighId, blackList) == blackList.end()) {
+		if (!blackList || utils::findInOrderedVector<long>(diagNeighId, *blackList) == blackList->end()) {
 			utils::addToOrderedVector<long>(diagNeighId, *neighs);
 		}
 	}
@@ -1722,13 +1680,14 @@ void VolCartesian::_findCellEdgeNeighs(long id, int edge, const std::vector<long
 	\param id is the id of the cell
 	\param vertex is a vertex of the cell
 	\param blackList is a list of cells that are excluded from the search.
-	The blacklist has to be a unique list of ordered cell ids.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
 	\param[in,out] neighs is the vector were the neighbours of the specified
 	cell for the given vertex will be stored. The vector is not cleared before
 	adding the neighbours, it is extended by appending all the neighbours
 	found by this function
 */
-void VolCartesian::_findCellVertexNeighs(long id, int vertex, const std::vector<long> &blackList, std::vector<long> *neighs) const
+void VolCartesian::_findCellVertexNeighs(long id, int vertex, const std::vector<long> *blackList, std::vector<long> *neighs) const
 {
 	std::array<int, 3> cellIjk   = getCellCartesianId(id);
 	std::array<int, 3> vertexIjk = getVertexCartesianId(cellIjk, vertex);
@@ -1745,7 +1704,7 @@ void VolCartesian::_findCellVertexNeighs(long id, int vertex, const std::vector<
 		// Get the linear neighbour index and, if it's not on the blacklist,
 		// add it to the list of neighbours
 		long neighId = getCellLinearId(neighIjk);
-		if (utils::findInOrderedVector<long>(neighId, blackList) == blackList.end()) {
+		if (!blackList || utils::findInOrderedVector<long>(neighId, *blackList) == blackList->end()) {
 			utils::addToOrderedVector<long>(neighId, *neighs);
 		}
 	}
@@ -2293,6 +2252,49 @@ std::array<double, 3> VolCartesian::evalCellCentroid(const std::array<int, 3> &i
 const std::vector<double> & VolCartesian::getCellCentroids(int direction) const
 {
 	return m_cellCenters[direction];
+}
+
+/*!
+	Evaluate the cartesian index of the neighbour for the specified face.
+
+	\param id is the id of the cell
+	\param face is a face of the cell
+	\result The cartesian index of the neighbour for the specified face.
+*/
+std::array<int, 3> VolCartesian::getCellFaceNeighsCartesianId(long id, int face) const
+{
+	int neighSide      = face % 2;
+	int neighDirection = std::floor(face / 2);
+
+	std::array<int, 3> neighIjk(getCellCartesianId(id));
+	if (neighSide == 0) {
+		neighIjk[neighDirection]--;
+	} else {
+		neighIjk[neighDirection]++;
+	}
+
+	return neighIjk;
+}
+
+/*!
+	Evaluate the linear index of the neighbour for the specified face.
+
+	\param id is the id of the cell
+	\param face is a face of the cell
+	\result The linear index of the neighbour for the specified face.
+*/
+long VolCartesian::getCellFaceNeighsLinearId(long id, int face) const
+{
+	std::array<int, 3> neighIjk = getCellFaceNeighsCartesianId(id, face);
+
+	long neighId;
+	if (isCellCartesianIdValid(neighIjk)) {
+		neighId = getCellLinearId(neighIjk);
+	} else {
+		neighId = Cell::NULL_ID;
+	}
+
+	return neighId;
 }
 
 }

@@ -382,6 +382,9 @@ public:
 
 	bool empty() const;
 
+	bool isVertexAutoIndexingEnabled() const;
+	void setVertexAutoIndexing(bool enabled);
+
 	virtual long getVertexCount() const;
 	long getInternalVertexCount() const;
 #if BITPIT_ENABLE_MPI==1
@@ -429,6 +432,9 @@ public:
 	VertexConstIterator ghostVertexConstBegin() const;
 	VertexConstIterator ghostVertexConstEnd() const;
 #endif
+
+	bool isCellAutoIndexingEnabled() const;
+	void setCellAutoIndexing(bool enabled);
 
 	virtual long getCellCount() const;
 	long getInternalCellCount() const;
@@ -529,6 +535,9 @@ public:
 	CellConstIterator ghostCellConstEnd() const;
 	BITPIT_DEPRECATED(CellConstIterator ghostConstEnd() const);
 #endif
+
+	bool isInterfaceAutoIndexingEnabled() const;
+	void setInterfaceAutoIndexing(bool enabled);
 
 	virtual long getInterfaceCount() const;
 	PiercedVector<Interface> &getInterfaces();
@@ -837,10 +846,10 @@ protected:
 
 	virtual long _getCellNativeIndex(long id) const;
 
-	virtual void _findCellNeighs(long id, const std::vector<long> &blackList, std::vector<long> *neighs) const;
-	virtual void _findCellFaceNeighs(long id, int face, const std::vector<long> &blackList, std::vector<long> *neighs) const;
-	virtual void _findCellEdgeNeighs(long id, int edge, const std::vector<long> &blackList, std::vector<long> *neighs) const;
-	virtual void _findCellVertexNeighs(long id, int vertex, const std::vector<long> &blackList, std::vector<long> *neighs) const;
+	virtual void _findCellNeighs(long id, const std::vector<long> *blackList, std::vector<long> *neighs) const;
+	virtual void _findCellFaceNeighs(long id, int face, const std::vector<long> *blackList, std::vector<long> *neighs) const;
+	virtual void _findCellEdgeNeighs(long id, int edge, const std::vector<long> *blackList, std::vector<long> *neighs) const;
+	virtual void _findCellVertexNeighs(long id, int vertex, const std::vector<long> *blackList, std::vector<long> *neighs) const;
 
 	void setExpert(bool expert);
 
@@ -868,9 +877,9 @@ protected:
 	int findAdjoinNeighFace(long cellId, int cellFace, long neighId) const;
 
 private:
-	IndexGenerator<long> m_vertexIdGenerator;
-	IndexGenerator<long> m_interfaceIdGenerator;
-	IndexGenerator<long> m_cellIdGenerator;
+	std::unique_ptr<IndexGenerator<long>> m_vertexIdGenerator;
+	std::unique_ptr<IndexGenerator<long>> m_interfaceIdGenerator;
+	std::unique_ptr<IndexGenerator<long>> m_cellIdGenerator;
 
 	long m_nInternalVertices;
 #if BITPIT_ENABLE_MPI==1
