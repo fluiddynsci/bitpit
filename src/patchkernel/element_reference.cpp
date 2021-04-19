@@ -546,10 +546,10 @@ ReferenceVoxelInfo::ReferenceVoxelInfo()
     faceConnectStorage[4][2] = 0;
     faceConnectStorage[4][3] = 1;
 
-    faceConnectStorage[5][0] = 4;
-    faceConnectStorage[5][1] = 5;
-    faceConnectStorage[5][2] = 6;
-    faceConnectStorage[5][3] = 7;
+    faceConnectStorage[5][0] = 7;
+    faceConnectStorage[5][1] = 6;
+    faceConnectStorage[5][2] = 5;
+    faceConnectStorage[5][3] = 4;
 
     initializeFaceEdges(facesInfo, edgesInfo);
 }
@@ -1298,10 +1298,8 @@ std::array<double, 3> ReferenceTriangleInfo::evalNormal(const std::array<double,
 void ReferenceTriangleInfo::evalPointProjection(const std::array<double, 3> &point, const std::array<double, 3> *vertexCoords,
                                                 std::array<double, 3> *projection, double *distance) const
 {
-    std::array<double, 3> lambda;
-    *distance = CGElem::distancePointTriangle(point, vertexCoords[0], vertexCoords[1], vertexCoords[2], lambda);
-
-    *projection = CGElem::reconstructPointFromBarycentricTriangle(vertexCoords[0], vertexCoords[1], vertexCoords[2], lambda);
+    *projection = CGElem::projectPointTriangle(point, vertexCoords[0], vertexCoords[1], vertexCoords[2]);
+    *distance   = norm2(point - *projection);
 }
 
 /*!

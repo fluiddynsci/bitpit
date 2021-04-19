@@ -24,6 +24,7 @@
 
 #ifndef __BITPIT_MODULE_LA_HPP__
 #define __BITPIT_MODULE_LA_HPP__
+#include "moduleBegin.hpp"
 
 /*!
  * @defgroup LinearAlgebra Linear algebra (LA)
@@ -39,12 +40,11 @@
  * @}
  */
 
-#include "bitpit_version.hpp"
-
 #include "manipulation.hpp"
 #include "matrix_utilities.hpp"
 #include "multiplication.hpp"
 #include "system_solvers_large.hpp"
 #include "system_solvers_small.hpp"
 
+#include "moduleEnd.hpp"
 #endif

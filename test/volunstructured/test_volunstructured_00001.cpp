@@ -53,6 +53,8 @@ int subtest_001()
 #endif
     patch_2D->getVTK().setName("unstructured_uniform_patch_2D");
 
+    patch_2D->setVertexAutoIndexing(false);
+
     patch_2D->addVertex({{0.00000000, 0.00000000, 0.00000000}},  1);
     patch_2D->addVertex({{0.00000000, 1.00000000, 0.00000000}},  2);
     patch_2D->addVertex({{1.00000000, 1.00000000, 0.00000000}},  3);
@@ -113,7 +115,8 @@ int subtest_001()
 
     double volume_expected_2D = 1.0;
     if (std::abs(volume_2D - volume_expected_2D) > 1e-12) {
-        throw std::runtime_error("Volume of the 2D patch doesn't match the expected value");
+        log::cout() << "Volume of the 2D patch doesn't match the expected value" << std::endl;
+        return 1;
     }
 
     log::cout() << std::endl;
@@ -133,7 +136,8 @@ int subtest_001()
 
     double surfaceArea_expected_2D = 4.0;
     if (std::abs(surfaceArea_2D - surfaceArea_expected_2D) > 1e-12) {
-        throw std::runtime_error("Surface area of the 2D patch doesn't match the expected value");
+        log::cout() << "Surface area of the 2D patch doesn't match the expected value" << std::endl;
+        return 1;
     }
 
     log::cout() << std::endl;
@@ -198,6 +202,8 @@ int subtest_002()
     VolUnstructured *patch_3D = new VolUnstructured(0, 3);
 #endif
     patch_3D->getVTK().setName("unstructured_uniform_patch_3D");
+
+    patch_3D->setVertexAutoIndexing(false);
 
     patch_3D->addVertex({{0.00000000, 0.00000000,  0.00000000}},  1);
     patch_3D->addVertex({{1.00000000, 0.00000000,  0.00000000}},  2);
@@ -359,7 +365,8 @@ int subtest_002()
 
     double volume_expected_3D = 5.0;
     if (std::abs(volume_3D - volume_expected_3D) > 1e-12) {
-        throw std::runtime_error("Volume of the 3D patch doesn't match the expected value");
+        log::cout() << "Volume of the 3D patch doesn't match the expected value" << std::endl;
+        return 1;
     }
 
     log::cout() << std::endl;
@@ -379,7 +386,8 @@ int subtest_002()
 
     double surfaceArea_expected_3D = 22.0;
     if (std::abs(surfaceArea_3D - surfaceArea_expected_3D) > 1e-12) {
-        throw std::runtime_error("Surface area of the 3D patch doesn't match the expected value");
+        log::cout() << "Surface area of the 3D patch doesn't match the expected value" << std::endl;
+        return 1;
     }
 
     log::cout() << std::endl;
@@ -419,7 +427,8 @@ int subtest_002()
 
     double divergence_expected_3D = 0.0;
     if (std::abs(divergence_3D - divergence_expected_3D) > 1e-12) {
-        throw std::runtime_error("Divergence of the 3D patch doesn't match the expected value");
+        log::cout() << "Divergence of the 3D patch doesn't match the expected value" << std::endl;
+        return 1;
     }
 
     log::cout() << std::endl;

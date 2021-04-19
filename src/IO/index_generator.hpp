@@ -26,7 +26,6 @@
 #define __BITPIT_INDEX_GENERATOR_HPP__
 
 #include <cassert>
-#include <deque>
 #include <iostream>
 #include <limits>
 #include <set>
@@ -69,7 +68,6 @@ private:
     std::set<id_type> m_trash;
 
     void eraseFromTrash(id_type id);
-    void pushToTrash(id_type id);
 
     int getBinaryArchiveVersion() const;
 

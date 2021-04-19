@@ -24,14 +24,14 @@
 
 #ifndef __BITPIT_MODULE_PABLO_HPP__
 #define __BITPIT_MODULE_PABLO_HPP__
+#include "moduleBegin.hpp"
 
 /*!
  * @defgroup PABLO Octree (PABLO)
  */
 
-#include "bitpit_version.hpp"
-
 #include "PabloUniform.hpp"
 #include "PabloNonUniform.hpp"
 
+#include "moduleEnd.hpp"
 #endif

@@ -54,6 +54,39 @@ public:
 		COORD_Z,
 	};
 
+	/*!
+		Functional for comparing the position of two vertices.
+	*/
+	struct Less {
+
+		Less(double tolerance)
+			: m_tolerance(tolerance)
+		{
+		}
+
+		bool operator()(const Vertex &vertex_1, const Vertex &vertex_2) const
+		{
+			return operator()(&vertex_1, &vertex_2);
+		}
+
+		bool operator()(const Vertex *vertex_1, const Vertex *vertex_2) const
+		{
+			for (int d = 0; d < 3; ++d) {
+				if (utils::DoubleFloatingEqual()((*vertex_1)[d], (*vertex_2)[d], m_tolerance)) {
+					continue;
+				}
+
+				return (*vertex_1)[d] < (*vertex_2)[d];
+			}
+
+			return false;
+		}
+
+	private:
+		double m_tolerance;
+
+	};
+
 	Vertex();
 	Vertex(long id, bool interior = true);
 	Vertex(long id, const std::array<double, 3> &coords, bool interior = true);
@@ -72,12 +105,13 @@ public:
 	bool operator==(const Vertex &other) const;
 
 	double & operator[](int coord_id);
-	double  operator[](int coord_id) const;
+	const double & operator[](int coord_id) const;
 
 	void setId(long id);
 	long getId() const;
 
 	void setCoords(const std::array<double, 3> &coords);
+	std::array<double, 3> & getCoords();
 	const std::array<double, 3> & getCoords() const;
 
 	void translate(const std::array<double, 3> &translation);

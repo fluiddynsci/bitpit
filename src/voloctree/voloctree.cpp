@@ -1520,33 +1520,197 @@ std::vector<adaption::Info> VolOctree::sync(bool trackChanges) {
         }
 #endif
 
-        // Track created interfaces
-        if(createdCells.size() > 0) {
-            // List of unique interfaces that have been created
-            std::unordered_set<long> createdInterfaces;
-            for(const auto& cellId : createdCells) {
-                const Cell& cell = m_cells.at(cellId);
-                long nCellInterfaces = cell.getInterfaceCount();
-                const long* interfaces = cell.getInterfaces();
-                for(int k = 0; k < nCellInterfaces; ++k) {
-                    long interfaceId = interfaces[k];
-                    if(interfaceId >= 0) {
-                        createdInterfaces.insert(interfaceId);
-                    }
-                }
-            }
+		// Track created interfaces
+		if (createdCells.size() > 0) {
+			// List of unique interfaces that have been created
+			std::unordered_set<long> createdInterfaces;
+			for (const auto &cellId : createdCells) {
+				const Cell &cell = m_cells.at(cellId);
+				long nCellInterfaces = cell.getInterfaceCount();
+				const long *interfaces = cell.getInterfaces();
+				for (int k = 0; k < nCellInterfaces; ++k) {
+					long interfaceId = interfaces[k];
+					if (interfaceId >= 0) {
+						createdInterfaces.insert(interfaceId);
+					}
+				}
+			}
 
-            // Adaption info
-            std::size_t infoId = adaptionData.create(adaption::TYPE_CREATION, adaption::ENTITY_INTERFACE, currentRank);
-            adaption::Info& adaptionInfo = adaptionData[infoId];
-            adaptionInfo.current.reserve(createdInterfaces.size());
-            for(long interfaceId : createdInterfaces) {
-                adaptionInfo.current.emplace_back();
-                long& createdInterfaceId = adaptionInfo.current.back();
-                createdInterfaceId = interfaceId;
-            }
-        }
-    }
+			// Adaption info
+			std::size_t infoId = adaptionData.create(adaption::TYPE_CREATION, adaption::ENTITY_INTERFACE, currentRank);
+			adaption::Info &adaptionInfo = adaptionData[infoId];
+			adaptionInfo.current.reserve(createdInterfaces.size());
+			for (long interfaceId : createdInterfaces) {
+				adaptionInfo.current.emplace_back();
+				long &createdInterfaceId = adaptionInfo.current.back();
+				createdInterfaceId = interfaceId;
+			}
+		}
+	}
+
+	// Done
+	return adaptionData.dump();
+}
+
+
+/*!
+	Delete the specified cells.
+
+	\param deletedOctants contains a list with the information about the
+	deleted octants
+	\result Returns the stitch information that can  the faces created
+	after deleting the octants.
+*/
+VolOctree::StitchInfo VolOctree::deleteCells(const std::vector<DeleteInfo> &deletedOctants)
+{
+	// Info of the cells
+	int nCellVertices = m_cellTypeInfo->nVertices;
+
+	// Info on the faces
+	int nInterfaceVertices = m_interfaceTypeInfo->nVertices;
+
+	// Delete the cells
+	std::unordered_set<long> deadVertices;
+
+	std::vector<long> deadCells;
+	deadCells.reserve(deletedOctants.size());
+	for (const DeleteInfo &deleteInfo : deletedOctants) {
+		long cellId = deleteInfo.cellId;
+		const Cell &cell = m_cells[cellId];
+
+		// List vertices to remove
+		//
+		// For now, all cell vertices will be listed. Later, the vertex of
+		// the dangling faces will be removed from the list.
+		ConstProxyVector<long> cellVertexIds = cell.getVertexIds();
+		for (int k = 0; k < nCellVertices; ++k) {
+			long vertexId = cellVertexIds[k];
+			deadVertices.insert(vertexId);
+		}
+
+		// Remove patch-tree associations
+		const OctantInfo &octantInfo = getCellOctant(cellId);
+		uint32_t treeId = octantInfo.id;
+
+		if (cell.isInterior()) {
+			m_cellToOctant.erase(cellId);
+
+			auto octantToCellItr = m_octantToCell.find(treeId);
+			if (octantToCellItr->second == cellId) {
+				m_octantToCell.erase(octantToCellItr);
+			}
+		} else {
+			m_cellToGhost.erase(cellId);
+
+			auto ghostToCellItr = m_ghostToCell.find(treeId);
+			if (ghostToCellItr->second == cellId) {
+				m_ghostToCell.erase(ghostToCellItr);
+			}
+		}
+
+		// Cell needs to be removed
+		deadCells.push_back(cellId);
+	}
+
+	PatchKernel::deleteCells(deadCells);
+
+	// Prune cell adjacencies and interfaces
+	//
+	// At this stage we cannot fully update adjacencies and interfaces, but
+	// we need to remove stale adjacencies and interfaces.
+	pruneStaleAdjacencies();
+
+	pruneStaleInterfaces();
+
+	// All the vertices belonging to the dangling cells has to be kept
+	//
+	// The vertices of the dangling faces need to be kept because there are
+	// still cells using them. However it's not enough to consider only the
+	// vertices on the dangling faces, we have to consider the vertices of
+	// the whole cell. That's because we may need to keep vertices on the
+	// edges of the cell, and those vertices may not be on interfaces of the
+	// dangling faces.
+	//
+	// Morover we need to build a map between the patch numbering and the
+	// octree numbering of the vertices of the dangling cells. This map will
+	// be used when imprting the octants to stitch the imported octants to
+	// the existing cells.
+	StitchInfo stitchVertices;
+	for (const auto &entry: m_alteredCells) {
+		if (!testAlterationFlags(entry.second, FLAG_DANGLING)) {
+			continue;
+		}
+
+		// Vertices of the cell
+		long cellId = entry.first;
+		const Cell &cell = m_cells[cellId];
+		ConstProxyVector<long> cellVertexIds = cell.getVertexIds();
+
+		OctantInfo octantInfo = getCellOctant(cellId);
+		Octant *octant = getOctantPointer(octantInfo);
+
+		for (int k = 0; k < nCellVertices; ++k) {
+			long vertexId = cellVertexIds[k];
+			uint64_t vertexTreeKey = m_tree->computeNodePersistentKey(octant, k);
+			stitchVertices.insert({vertexTreeKey, vertexId});
+			deadVertices.erase(vertexId);
+		}
+
+		// Vertices of all other interfaces left of the cell
+		int nCellInterfaces = cell.getInterfaceCount();
+		const long *interfaces = cell.getInterfaces();
+		for (int i = 0; i < nCellInterfaces; ++i) {
+			long interfaceId = interfaces[i];
+			if (interfaceId < 0) {
+				continue;
+			}
+
+			const Interface &interface = m_interfaces[interfaceId];
+			if (interface.isBorder()) {
+				continue;
+			}
+
+			long ownerId  = interface.getOwner();
+			int ownerFace = interface.getOwnerFace();
+
+			const Cell &ownerCell = m_cells[ownerId];
+			ConstProxyVector<long> ownerCellVertexIds = ownerCell.getVertexIds();
+
+			OctantInfo ownerOctantInfo = getCellOctant(ownerId);
+			Octant *ownerOctant = getOctantPointer(ownerOctantInfo);
+
+			const int *localFaceConnect = m_cellTypeInfo->faceConnectStorage[ownerFace].data();
+			for (int k = 0; k < nInterfaceVertices; ++k) {
+				long vertexId = ownerCellVertexIds[localFaceConnect[k]];
+				uint64_t vertexTreeKey = m_tree->computeNodePersistentKey(ownerOctant, localFaceConnect[k]);
+				stitchVertices.insert({vertexTreeKey, vertexId});
+				deadVertices.erase(vertexId);
+			}
+		}
+	}
+
+	// Delete the vertices
+	std::vector<long> deadVerticesList(deadVertices.cbegin(), deadVertices.cend());
+	PatchKernel::deleteVertices(deadVerticesList);
+
+	// Done
+	return stitchVertices;
+}
+
+/*!
+	Renumber the specified cells.
+
+	\param renumberedOctants contains the information about the renumbered
+	octants
+*/
+void VolOctree::renumberCells(const std::vector<RenumberInfo> &renumberedOctants)
+{
+	// Remove old patch-to-tree and tree-to-patch associations
+	for (const RenumberInfo &renumberInfo : renumberedOctants) {
+		long cellId = renumberInfo.cellId;
+		if (!m_cells[cellId].isInterior()) {
+			continue;
+		}
 
     // Done
     return adaptionData.dump();
@@ -1701,61 +1865,24 @@ VolOctree::StitchInfo VolOctree::deleteCells(const std::vector<DeleteInfo>& dele
         \param renumberedOctants contains the information about the renumbered
         octants
 */
-void VolOctree::renumberCells(const std::vector<RenumberInfo>& renumberedOctants) {
-    // Remove old patch-to-tree and tree-to-patch associations
-    for(const RenumberInfo& renumberInfo : renumberedOctants) {
-        long cellId = renumberInfo.cellId;
-        if(!m_cells[cellId].isInterior()) {
-            continue;
-        }
+std::vector<long> VolOctree::importCells(const std::vector<OctantInfo> &octantInfoList,
+                                         StitchInfo &stitchInfo, std::istream *restoreStream)
+{
+	// Create the new vertices
+	int nCellVertices = m_cellTypeInfo->nVertices;
+	for (const OctantInfo &octantInfo : octantInfoList) {
+		Octant *octant = getOctantPointer(octantInfo);
+		for (int k = 0; k < nCellVertices; ++k) {
+			uint64_t vertexTreeKey = m_tree->computeNodePersistentKey(octant, k);
+			if (stitchInfo.count(vertexTreeKey) == 0) {
+				// Vertex coordinates
+				std::array<double, 3> nodeCoords = m_tree->getNode(octant, k);
 
-        const OctantInfo& previousOctantInfo = getCellOctant(cellId);
-        uint32_t previousTreeId = previousOctantInfo.id;
-
-        m_octantToCell.erase(previousTreeId);
-    }
-
-    // Create new patch-to-tree and tree-to-patch associations
-    for(const RenumberInfo& renumberInfo : renumberedOctants) {
-        long cellId = renumberInfo.cellId;
-        if(!m_cells[cellId].isInterior()) {
-            continue;
-        }
-
-        uint32_t treeId = renumberInfo.newTreeId;
-
-        m_cellToOctant[cellId] = treeId;
-        m_octantToCell[treeId] = cellId;
-    }
-}
-
-/*!
-        Imports a list of octants into the patch.
-
-        \param octantInfoList is the list of octant to import
-        \param stitchInfo is the list of vertices that will be used to stitch the
-        the new octants
-        \param restoreStream is an optional stream from which the information about
-        the restore will be read. If no restore stream is given the the cells will
-        be created from scratch
-*/
-std::vector<long> VolOctree::importCells(const std::vector<OctantInfo>& octantInfoList, StitchInfo& stitchInfo,
-                                         std::istream* restoreStream) {
-    // Create the new vertices
-    int nCellVertices = m_cellTypeInfo->nVertices;
-    for(const OctantInfo& octantInfo : octantInfoList) {
-        Octant* octant = getOctantPointer(octantInfo);
-        for(int k = 0; k < nCellVertices; ++k) {
-            uint64_t vertexTreeMorton = m_tree->getNodeMorton(octant, k);
-            if(stitchInfo.count(vertexTreeMorton) == 0) {
-                // Vertex coordinates
-                std::array<double, 3> nodeCoords = m_tree->getNode(octant, k);
-
-                // Create the vertex
-                long vertexId;
-                if(!restoreStream) {
-#if BITPIT_ENABLE_MPI == 1
-                    VertexIterator vertexIterator = addVertex(std::move(nodeCoords));
+				// Create the vertex
+				long vertexId;
+				if (!restoreStream) {
+#if BITPIT_ENABLE_MPI==1
+					VertexIterator vertexIterator = addVertex(std::move(nodeCoords));
 #else
                     VertexIterator vertexIterator = addVertex(std::move(nodeCoords));
 #endif
@@ -1774,50 +1901,50 @@ std::vector<long> VolOctree::importCells(const std::vector<OctantInfo>& octantIn
 
                     restoreVertex(std::move(nodeCoords), vertexId);
 #endif
-                }
+				}
 
-                // Add the vertex to the stitching info
-                stitchInfo[vertexTreeMorton] = vertexId;
-            }
-        }
-    }
+				// Add the vertex to the stitching info
+				stitchInfo[vertexTreeKey] = vertexId;
+			}
+		}
+	}
 
-    // Reserve space for the maps
-    long nOctants = m_tree->getNumOctants();
-    m_cellToOctant.reserve(nOctants);
-    m_octantToCell.reserve(nOctants);
+	// Reserve space for the maps
+	long nOctants = m_tree->getNumOctants();
+	m_cellToOctant.reserve(nOctants);
+	m_octantToCell.reserve(nOctants);
 
-    long nGhostsOctants = m_tree->getNumGhosts();
-    m_cellToGhost.reserve(nGhostsOctants);
-    m_ghostToCell.reserve(nGhostsOctants);
+	long nGhostsOctants = m_tree->getNumGhosts();
+	m_cellToGhost.reserve(nGhostsOctants);
+	m_ghostToCell.reserve(nGhostsOctants);
 
-    // Add the cells
-    size_t octantInfoListSize = octantInfoList.size();
-    m_cells.reserve(m_cells.size() + octantInfoListSize);
+	// Add the cells
+	size_t octantInfoListSize = octantInfoList.size();
+	m_cells.reserve(m_cells.size() + octantInfoListSize);
 
-    std::vector<long> createdCells(octantInfoListSize);
-    for(size_t i = 0; i < octantInfoListSize; ++i) {
-        const OctantInfo& octantInfo = octantInfoList[i];
+	std::vector<long> createdCells(octantInfoListSize);
+	for (size_t i = 0; i < octantInfoListSize; ++i) {
+		const OctantInfo &octantInfo = octantInfoList[i];
 
-        // Octant connectivity
-        Octant* octant = getOctantPointer(octantInfo);
+		// Octant connectivity
+		Octant *octant = getOctantPointer(octantInfo);
 
-        // Cell connectivity
-        std::unique_ptr<long[]> cellConnect = std::unique_ptr<long[]>(new long[nCellVertices]);
-        for(int k = 0; k < nCellVertices; ++k) {
-            uint64_t vertexTreeMorton = m_tree->getNodeMorton(octant, k);
-            cellConnect[k] = stitchInfo.at(vertexTreeMorton);
-        }
+		// Cell connectivity
+		std::unique_ptr<long[]> cellConnect = std::unique_ptr<long[]>(new long[nCellVertices]);
+		for (int k = 0; k < nCellVertices; ++k) {
+			uint64_t vertexTreeKey = m_tree->computeNodePersistentKey(octant, k);
+			cellConnect[k] = stitchInfo.at(vertexTreeKey);
+		}
 
-#if BITPIT_ENABLE_MPI == 1
-        // Cell owner
-        int rank;
-        if(octantInfo.internal) {
-            rank = getRank();
-        } else {
-            uint64_t globalTreeId = m_tree->getGhostGlobalIdx(octantInfo.id);
-            rank = m_tree->getOwnerRank(globalTreeId);
-        }
+#if BITPIT_ENABLE_MPI==1
+		// Cell owner
+		int rank;
+		if (octantInfo.internal) {
+			rank = getRank();
+		} else {
+			uint64_t globalTreeId = m_tree->getGhostGlobalIdx(octantInfo.id);
+			rank = m_tree->getOwnerRank(globalTreeId);
+		}
 #endif
 
         // Add cell
@@ -2408,51 +2535,207 @@ void VolOctree::scale(const std::array<double, 3>& scaling, const std::array<dou
 
         This implementation can NOT handle hanging nodes.
 
-        \param id is the id of the cell
-        \param blackList is a list of cells that are excluded from the search.
-        The blacklist has to be a unique list of ordered cell ids.
-        \param[in,out] neighs is the vector were the neighbours of the specified
-        cell for the given vertex will be stored. The vector is not cleared before
-        adding the neighbours, it is extended by appending all the neighbours
-        found by this function
+	\param id is the id of the cell
+	\param blackList is a list of cells that are excluded from the search.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
+	\param[in,out] neighs is the vector were the neighbours of the specified
+	cell for the given vertex will be stored. The vector is not cleared before
+	adding the neighbours, it is extended by appending all the neighbours
+	found by this function
 */
-void VolOctree::_findCellNeighs(long id, const std::vector<long>& blackList, std::vector<long>* neighs) const {
-    OctantInfo octantInfo = getCellOctant(id);
+void VolOctree::_findCellNeighs(long id, const std::vector<long> *blackList, std::vector<long> *neighs) const
+{
+	OctantInfo octantInfo = getCellOctant(id);
 
-    int dimension = getDimension();
-    std::array<uint8_t, 4> nCodimensionItems;
-    nCodimensionItems[0] = 0;
-    nCodimensionItems[1] = m_tree->getNfaces();
-    if(dimension == 3) {
-        nCodimensionItems[2] = m_tree->getNedges();
-    }
-    nCodimensionItems[dimension] = m_tree->getNnodes();
+	int dimension = getDimension();
+	std::array<uint8_t, 4> nCodimensionItems;
+	nCodimensionItems[0] = 0;
+	nCodimensionItems[1] = m_tree->getNfaces();
+	if (dimension == 3) {
+		nCodimensionItems[2] = m_tree->getNedges();
+	}
+	nCodimensionItems[dimension] = m_tree->getNnodes();
 
-    std::vector<uint32_t> neighTreeIds;
-    std::vector<bool> neighGhostFlags;
-    for(uint8_t codim = 1; codim <= dimension; ++codim) {
-        for(int item = 0; item < nCodimensionItems[codim]; ++item) {
-            if(octantInfo.internal) {
-                m_tree->findNeighbours(octantInfo.id, item, codim, neighTreeIds, neighGhostFlags);
-            } else {
-                m_tree->findGhostNeighbours(octantInfo.id, item, codim, neighTreeIds, neighGhostFlags);
-            }
+	std::vector<uint32_t> neighTreeIds;
+	std::vector<bool> neighGhostFlags;
+	for(uint8_t codim = 1; codim <= dimension; ++codim){
+		for(int item = 0; item < nCodimensionItems[codim]; ++item){
+			if (octantInfo.internal) {
+				m_tree->findNeighbours(octantInfo.id, item, codim, neighTreeIds, neighGhostFlags);
+			} else {
+				m_tree->findGhostNeighbours(octantInfo.id, item, codim, neighTreeIds, neighGhostFlags);
+			}
 
-            int nNeighs = neighTreeIds.size();
-            for(int i = 0; i < nNeighs; ++i) {
-                OctantInfo neighOctantInfo(neighTreeIds[i], !neighGhostFlags[i]);
-                long neighId = getOctantId(neighOctantInfo);
+			int nNeighs = neighTreeIds.size();
+			for (int i = 0; i < nNeighs; ++i) {
+				OctantInfo neighOctantInfo(neighTreeIds[i], !neighGhostFlags[i]);
+				long neighId = getOctantId(neighOctantInfo);
 
-                if(utils::findInOrderedVector<long>(neighId, blackList) == blackList.end()) {
-                    utils::addToOrderedVector<long>(neighId, *neighs);
-                }
-            }
-        }
-    }
+				if (!blackList || utils::findInOrderedVector<long>(neighId, *blackList) == blackList->end()) {
+					utils::addToOrderedVector<long>(neighId, *neighs);
+				}
+			}
+		}
+	}
 }
 
 /*!
-        Extracts the neighbours of the specified cell for the given edge.
+	Extracts the neighbours of the specified cell for the given edge.
+
+	This function can be only used with three-dimensional cells.
+
+	\param id is the id of the cell
+	\param edge is an edge of the cell
+	\param blackList is a list of cells that are excluded from the search.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
+	\param[in,out] neighs is the vector were the neighbours of the specified
+	cell for the given edge will be stored. The vector is not cleared before
+	adding the neighbours, it is extended by appending all the neighbours
+	found by this function
+*/
+void VolOctree::_findCellEdgeNeighs(long id, int edge, const std::vector<long> *blackList, std::vector<long> *neighs) const
+{
+	assert(isThreeDimensional());
+	if (!isThreeDimensional()) {
+		return;
+	}
+
+	// Get octant info
+	const OctantInfo octantInfo = getCellOctant(id);
+
+	// Get edge neighbours
+	int codimension = getDimension() - 1;
+	findOctantCodimensionNeighs(octantInfo, edge, codimension, blackList, neighs);
+
+	// Add face neighbours
+	//
+	// Get all face neighbours and select the ones that contains the edge
+	// for which the neighbours are requested. To correctly consider these
+	// neighbours, the following logic can be used:
+	//   - if a face/edge neighbour has the same level or a lower level than
+	//     the current cell, then it certainly is also a vertex neighbour;
+	//   - if a face/edge neighbour has a higher level than the current cell,
+	//     it is necessary to check if the neighbour actually contains the
+	//     edge.
+	//
+	std::vector<long> faceNeighs;
+	const Octant *octant = getOctantPointer(octantInfo);
+	int octantLevel = m_tree->getLevel(octant);
+	for (int face : m_octantLocalFacesOnEdge[edge]) {
+		faceNeighs.clear();
+		_findCellFaceNeighs(id, face, blackList, &faceNeighs);
+		for (long neighId : faceNeighs) {
+			const OctantInfo neighOctantInfo = getCellOctant(neighId);
+			const Octant *neighOctant = getOctantPointer(neighOctantInfo);
+			int neighOctantLevel = m_tree->getLevel(neighOctant);
+			if (neighOctantLevel <= octantLevel) {
+				utils::addToOrderedVector<long>(neighId, *neighs);
+			} else if (m_tree->isEdgeOnOctant(octant, edge, neighOctant)) {
+				utils::addToOrderedVector<long>(neighId, *neighs);
+			}
+		}
+	}
+}
+
+/*!
+	Extracts the neighbours of the specified cell for the given local vertex.
+
+	\param id is the id of the cell
+	\param vertex is a local vertex of the cell
+	\param blackList is a list of cells that are excluded from the search.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
+	\param[in,out] neighs is the vector were the neighbours of the specified
+	cell for the given vertex will be stored. The vector is not cleared before
+	adding the neighbours, it is extended by appending all the neighbours
+	found by this function
+*/
+void VolOctree::_findCellVertexNeighs(long id, int vertex, const std::vector<long> *blackList, std::vector<long> *neighs) const
+{
+	// Get octant info
+	const OctantInfo octantInfo = getCellOctant(id);
+
+	// Get vertex neighbours
+	int codimension = getDimension();
+	findOctantCodimensionNeighs(octantInfo, vertex, codimension, blackList, neighs);
+
+	// Add edge and face neighbours
+	//
+	// Get all face and edge neighbours and select the ones that contains the
+	// vertex for which the neighbours are requested. On un-balanced trees
+	// the vertex can be inside the face/edge of the neighbour (hanging nodes).
+	// To correctly consider these neighbours, the following logic can be
+	// used:
+	//   - if a face/edge neighbour has the same level or a lower level than
+	//     the current cell, then it certainly is also a vertex neighbour;
+	//   - if a face/edge neighbour has a higher level than the current cell,
+	//     it is necessary to check if the neighbour actually contains the
+	//     vertex.
+	//
+	// NOTE: in three dimension the function "_findCellEdgeNeighs" will return
+	// both edge and face neighbours.
+	const Octant *octant = getOctantPointer(octantInfo);
+	int octantLevel = m_tree->getLevel(octant);
+	if (isThreeDimensional()) {
+		std::vector<long> edgeNeighs;
+		for (int edge : m_octantLocalEdgesOnVertex[vertex]) {
+			edgeNeighs.clear();
+			_findCellEdgeNeighs(id, edge, blackList, &edgeNeighs);
+			for (long neighId : edgeNeighs) {
+				const OctantInfo neighOctantInfo = getCellOctant(neighId);
+				const Octant *neighOctant = getOctantPointer(neighOctantInfo);
+				int neighOctantLevel = m_tree->getLevel(neighOctant);
+				if (neighOctantLevel <= octantLevel) {
+					utils::addToOrderedVector<long>(neighId, *neighs);
+				} else if (m_tree->isNodeOnOctant(octant, vertex, neighOctant)) {
+					utils::addToOrderedVector<long>(neighId, *neighs);
+				}
+			}
+		}
+	} else {
+		std::vector<long> faceNeighs;
+		for (int face : m_octantLocalFacesOnVertex[vertex]) {
+			faceNeighs.clear();
+			_findCellFaceNeighs(id, face, blackList, &faceNeighs);
+			for (long neighId : faceNeighs) {
+				const OctantInfo neighOctantInfo = getCellOctant(neighId);
+				const Octant *neighOctant = getOctantPointer(neighOctantInfo);
+				int neighOctantLevel = m_tree->getLevel(neighOctant);
+				if (neighOctantLevel <= octantLevel) {
+					utils::addToOrderedVector<long>(neighId, *neighs);
+				} else if (m_tree->isNodeOnOctant(octant, vertex, neighOctant)) {
+					utils::addToOrderedVector<long>(neighId, *neighs);
+				}
+			}
+		}
+	}
+}
+
+/*!
+	Finds the neighbours for the given co-dimension of the specified octant.
+
+	Only the neighbours for the specified co-dimension are found, neighbours
+	of higher co-dimensions are not inserted in the returned list.
+
+	\param octantInfo the data of the octant
+	\param codimension is the co-dimension
+	\param index is the local index of the entity (vertex, edge or face)
+	\param blackList is a list of cells that are excluded from the search.
+	The blacklist has to be a pointer to a unique list of ordered cell ids
+	or a null pointer if no cells should be excluded from the search
+	\param[in,out] neighs is the vector were the neighbours will be stored.
+	The vector is not cleared before adding the neighbours, it is extended
+	by appending all the neighbours found by this function
+*/
+void VolOctree::findOctantCodimensionNeighs(const OctantInfo &octantInfo, int index, int codimension,
+                                            const std::vector<long> *blackList, std::vector<long> *neighs) const
+{
+	int dimension = getDimension();
+	if (codimension > dimension || codimension <= 0) {
+		return;
+	}
 
         This function can be only used with three-dimensional cells.
 
@@ -2472,41 +2755,10 @@ void VolOctree::_findCellEdgeNeighs(long id, int edge, const std::vector<long>& 
         return;
     }
 
-    // Get octant info
-    const OctantInfo octantInfo = getCellOctant(id);
-
-    // Get edge neighbours
-    int codimension = getDimension() - 1;
-    findOctantCodimensionNeighs(octantInfo, edge, codimension, blackList, neighs);
-
-    // Add face neighbours
-    //
-    // Get all face neighbours and select the ones that contains the edge
-    // for which the neighbours are requested. To correctly consider these
-    // neighbours, the following logic can be used:
-    //   - if a face/edge neighbour has the same level or a lower level than
-    //     the current cell, then it certainly is also a vertex neighbour;
-    //   - if a face/edge neighbour has a higher level than the current cell,
-    //     it is necessary to check if the neighbour actually contains the
-    //     edge.
-    //
-    std::vector<long> faceNeighs;
-    const Octant* octant = getOctantPointer(octantInfo);
-    int octantLevel = m_tree->getLevel(octant);
-    for(int face : m_octantLocalFacesOnEdge[edge]) {
-        faceNeighs.clear();
-        _findCellFaceNeighs(id, face, blackList, &faceNeighs);
-        for(long neighId : faceNeighs) {
-            const OctantInfo neighOctantInfo = getCellOctant(neighId);
-            const Octant* neighOctant = getOctantPointer(neighOctantInfo);
-            int neighOctantLevel = m_tree->getLevel(neighOctant);
-            if(neighOctantLevel <= octantLevel) {
-                utils::addToOrderedVector<long>(neighId, *neighs);
-            } else if(m_tree->isEdgeOnOctant(octant, edge, neighOctant)) {
-                utils::addToOrderedVector<long>(neighId, *neighs);
-            }
-        }
-    }
+		if (!blackList || utils::findInOrderedVector<long>(neighId, *blackList) == blackList->end()) {
+			utils::addToOrderedVector<long>(neighId, *neighs);
+		}
+	}
 }
 
 /*!

@@ -836,11 +836,16 @@ PatchKernel::CellIterator PatchKernel::addCell(ElementType type, std::unique_ptr
 		return cellEnd();
 	}
 
-	if (id < 0) {
-		id = m_cellIdGenerator.generate();
-	} else {
-		m_cellIdGenerator.setAssigned(id);
+	if (m_cellIdGenerator) {
+		if (id < 0) {
+			id = m_cellIdGenerator->generate();
+		} else {
+			m_cellIdGenerator->setAssigned(id);
+		}
+	} else if (id < 0) {
+		throw std::runtime_error("No valid id has been provided for the cell.");
 	}
+
 
 	if (Cell::getDimension(type) > getDimension()) {
 		return cellEnd();
@@ -2213,14 +2218,13 @@ std::vector<adaption::Info> PatchKernel::_partitioningAlter_sendCells(const std:
                             int nFrontierCellEdges = frontierCell->getEdgeCount();
                             for (int edge = 0; edge < nFrontierCellEdges; ++edge) {
                                 // Edge information
-                                ElementType edgeType = frontierCell->getEdgeType(edge);
                                 int nEdgeVertices = frontierCell->getEdgeVertexCount(edge);
 
                                 CellHalfEdge frontierEdge = CellHalfEdge(*frontierCell, edge, CellHalfEdge::WINDING_NATURAL);
 
                                 // Discard edges that do not belong to the
                                 // current frontier face
-                                ConstProxyVector<long> edgeVertexIds = Cell::getVertexIds(edgeType, frontierEdge.getConnect().data());
+                                ConstProxyVector<long> edgeVertexIds = frontierEdge.getVertexIds();
 
                                 bool isFrontierFaceEdge = true;
                                 for (int k = 0; k < nEdgeVertices; ++k) {
@@ -2976,8 +2980,12 @@ std::vector<adaption::Info> PatchKernel::_partitioningAlter_receiveCells(const s
             // patch generate a new id. Otherwise, keep the id of the received
             // vertex.
             if (!isDuplicate) {
-                if (m_vertexIdGenerator.isAssigned(originalVertexId)) {
-                    vertex.setId(Vertex::NULL_ID);
+                if (m_vertexIdGenerator) {
+                    if (m_vertexIdGenerator->isAssigned(originalVertexId)) {
+                        vertex.setId(Vertex::NULL_ID);
+                    }
+                } else if (m_vertices.exists(originalVertexId)) {
+                    throw std::runtime_error("A vertex with the same id of the received vertex already exists.");
                 }
 
                 VertexIterator vertexIterator = addVertex(std::move(vertex));
@@ -3093,8 +3101,13 @@ std::vector<adaption::Info> PatchKernel::_partitioningAlter_receiveCells(const s
                 // If the id of the received cell is already assigned, let the
                 // patch generate a new id. Otherwise, keep the id of the received
                 // cell.
-                if (m_cellIdGenerator.isAssigned(cellOriginalId)){
-                    cell.setId(Cell::NULL_ID);
+
+                if (m_cellIdGenerator) {
+                    if (m_cellIdGenerator->isAssigned(cellOriginalId)) {
+                        cell.setId(Cell::NULL_ID);
+                    }
+                } else if (m_cells.exists(cellOriginalId)) {
+                    throw std::runtime_error("A cell with the same id of the received cell already exists.");
                 }
 
                 CellIterator cellIterator = addCell(std::move(cell), cellOwner);

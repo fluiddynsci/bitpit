@@ -42,6 +42,17 @@ if(${CMAKE_VERSION} VERSION_EQUAL "3.9.0" OR ${CMAKE_VERSION} VERSION_GREATER "3
 endif()
 
 #------------------------------------------------------------------------------------#
+# Internal variables
+#------------------------------------------------------------------------------------#
+set(BITPIT_VERSION "1.8.0-devel" CACHE INTERNAL "Version number")
+
+#------------------------------------------------------------------------------------#
+# External utilities
+#------------------------------------------------------------------------------------#
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/external/git/cmake")
+include(GetGitRevisionDescription)
+
+#------------------------------------------------------------------------------------#
 # Functions
 #------------------------------------------------------------------------------------#
 function(getModuleEnableName MODULE_NAME FLAG_NAME)
@@ -320,31 +331,67 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 #------------------------------------------------------------------------------------#
-# Library version
+# Version
 #------------------------------------------------------------------------------------#
-set (VERSION_HEADER_FILENAME "${PROJECT_SOURCE_DIR}/src/common/${PROJECT_NAME}_version.hpp")
-string(TOUPPER "${PROJECT_NAME}_VERSION" VERSION_DEFINE_NAME)
 
-file(READ "${VERSION_HEADER_FILENAME}" header)
+# Version regex expressions
+set(VERSION_MATCHER_REGEX "^${CMAKE_PROJECT_NAME}-((([0-9]*)(\\.([0-9]*))?(\\.([0-9]*)))(-(.*))?)$")
+set(VERSION_TAG_MATCHER_REGEX "^${CMAKE_PROJECT_NAME}-[^-]*(-(.*))?$")
 
-string(REGEX REPLACE ".*#[ \t]*define[ \t]*${VERSION_DEFINE_NAME}[ \t]*\"([^\n]*)\".*" "\\1" match "${header}")
-set(BITPIT_VERSION "${match}")
+# Initialize version string
+set(BITPIT_VERSION_STRING "${CMAKE_PROJECT_NAME}-${BITPIT_VERSION}")
 
-STRING(REGEX REPLACE "^([0-9]+)\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z-]+)?" "\\1" match "${BITPIT_VERSION}")
-set(BITPIT_MAJOR_VERSION "${match}")
+# Add git information
+get_git_head_revision(BITPIT_GIT_REFERENCE BITPIT_GIT_HASH)
+if(NOT "${BITPIT_GIT_REFERENCE}" STREQUAL "GITDIR-NOTFOUND")
+    # Add git information
+    #
+    # Information about git are added only if git tag doens't match the version
+    # string.
+    git_get_exact_tag(BITPIT_GIT_TAG)
+    if(NOT "${BITPIT_GIT_TAG}" STREQUAL "${BITPIT_VERSION_STRING}")
+        git_get_branch(BITPIT_GIT_BRANCH)
+        if(NOT "${BITPIT_GIT_BRANCH}" MATCHES "NOTFOUND$")
+            set(BITPIT_VERSION_STRING "${BITPIT_VERSION_STRING}-${BITPIT_GIT_BRANCH}")
+        else()
+            set(BITPIT_VERSION_STRING "${BITPIT_VERSION_STRING}-detached")
+        endif()
 
-STRING(REGEX REPLACE "^[0-9]+\\.([0-9])+\\.[0-9]+(-[0-9A-Za-z-]+)?" "\\1" match "${BITPIT_VERSION}")
-set(BITPIT_MINOR_VERSION "${match}")
+        git_get_short_hash(BITPIT_GIT_SHORT_HASH)
+        set(BITPIT_VERSION_STRING "${BITPIT_VERSION_STRING}-${BITPIT_GIT_SHORT_HASH}")
+    endif()
 
-STRING(REGEX REPLACE "^[0-9]+\\.[0-9]+\\.([0-9]+)(-[0-9A-Za-z-]+)?" "\\1" match "${BITPIT_VERSION}")
-set(BITPIT_PATCH_VERSION "${match}")
+    # Report if there are uncommited changes
+    #
+    # It's not possible to automatically re-run cmake (and thus update the
+    # version) if there are uncommited changes. The label will be reliably
+    # added only if, after changing the code, cmake is run manually.
+    set(BITPIT_VERSION_DIRTY_LABEL "dirty" CACHE STRING "Label that will be added to the version string when there are uncommited changes")
+    mark_as_advanced(${BITPIT_VERSION_DIRTY_LABEL})
 
-STRING(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+-([0-9A-Za-z-]+)" match "${BITPIT_VERSION}")
-if (NOT match STREQUAL "")
-	STRING(REGEX REPLACE "^[0-9]+\\.[0-9]+\\.[0-9]+-([0-9A-Za-z-]+)" "\\1" match "${BITPIT_VERSION}")
-	set(BITPIT_TAG_VERSION "${match}")
+    git_local_changes(BITPIT_GIT_STATUS)
+    if (BITPIT_GIT_STATUS STREQUAL "DIRTY")
+        set(BITPIT_VERSION_STRING "${BITPIT_VERSION_STRING}-${BITPIT_VERSION_DIRTY_LABEL}")
+    endif()
+endif()
+
+# Check if version string is valid
+string(REGEX MATCH "${VERSION_MATCHER_REGEX}" VERSION_STRING_VALID "${BITPIT_VERSION_STRING}")
+if ("${VERSION_STRING_VALID}" STREQUAL "")
+    message(FATAL_ERROR "Version string \"${BITPIT_VERSION_STRING}\" is not a valid version.")
+endif()
+
+# Extract version information
+string(REGEX REPLACE "${VERSION_MATCHER_REGEX}" "\\1" BITPIT_VERSION "${BITPIT_VERSION_STRING}")
+string(REGEX REPLACE "${VERSION_MATCHER_REGEX}" "\\3" BITPIT_MAJOR_VERSION "${BITPIT_VERSION_STRING}")
+string(REGEX REPLACE "${VERSION_MATCHER_REGEX}" "\\5" BITPIT_MINOR_VERSION "${BITPIT_VERSION_STRING}")
+string(REGEX REPLACE "${VERSION_MATCHER_REGEX}" "\\7" BITPIT_PATCH_VERSION "${BITPIT_VERSION_STRING}")
+
+string(REGEX MATCH "${VERSION_TAG_MATCHER_REGEX}" dummy "${BITPIT_VERSION_STRING}")
+if (NOT CMAKE_MATCH_2 STREQUAL "")
+    string(REGEX REPLACE "${VERSION_TAG_MATCHER_REGEX}" "\\2" BITPIT_TAG_VERSION "${BITPIT_VERSION_STRING}")
 else ()
-	set(BITPIT_TAG_VERSION "")
+    set(BITPIT_TAG_VERSION "")
 endif ()
 
 #------------------------------------------------------------------------------------#

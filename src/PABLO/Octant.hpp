@@ -133,9 +133,9 @@ class Octant{
     };
 
 private:
-    uint32_t                        m_x;            /**< Coordinate x */
-    uint32_t                        m_y;            /**< Coordinate y */
-    uint32_t                        m_z;            /**< Coordinate z (2D case = 0)*/
+    uint64_t                        m_morton;       /**< Morton number */
+    uint8_t                         m_level;        /**< Refinement level (0=root) */
+    int8_t                          m_marker;       /**< Set for Refinement(m>0) or Coarsening(m<0) |m|-times */
     std::bitset<INFO_ITEM_COUNT>    m_info;         /**< -Info[0..5]: true if 0..5 face is a boundary face [bound] \n
                                                          -Info[6..11]: true if 0..6 face is a process boundary face [pbound] \n
                                                          -Info[12/13]: true if octant is new after refinement/coarsening \n
@@ -192,7 +192,6 @@ public:
     uint32_t    getLogicalX() const;
     uint32_t    getLogicalY() const;
     uint32_t    getLogicalZ() const;
-    u32array3   getLogicalCoord() const;
     uint8_t     getLevel() const;
     int8_t      getMarker() const;
     bool        getBound(uint8_t face) const;
@@ -232,9 +231,9 @@ public:
     void            getLogicalNode(u32array3 & node, uint8_t inode) const;
     u32array3       getLogicalNode(uint8_t inode) const;
     void            getNormal(uint8_t iface, i8array3 & normal, const int8_t (&normals)[6][3]) const;
-    uint64_t        computeMorton() const;
-    uint64_t        computeNodeMorton(uint8_t inode) const;
-    uint64_t        computeNodeMorton(const u32array3 &node) const;
+    uint64_t        getMorton() const;
+    uint64_t        computeNodePersistentKey(uint8_t inode) const;
+    uint64_t        computeNodePersistentKey(const u32array3 &node) const;
 
     // =================================================================================== //
     // OTHER METHODS                                                                   //

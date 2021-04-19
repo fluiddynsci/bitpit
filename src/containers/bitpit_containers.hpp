@@ -22,6 +22,10 @@
  *
 \*---------------------------------------------------------------------------*/
 
+#ifndef __BITPIT_MODULE_CONTAINERS_HPP__
+#define __BITPIT_MODULE_CONTAINERS_HPP__
+#include "moduleBegin.hpp"
+
 /*!
  * @defgroup containers Containers
  * @{
@@ -29,11 +33,6 @@
  * @}
  *
  */
-
-#ifndef __BITPIT_MODULE_CONTAINERS_HPP__
-#define __BITPIT_MODULE_CONTAINERS_HPP__
-
-#include "bitpit_version.hpp"
 
 #include "binary_stream.hpp"
 #include "flatVector2D.hpp"
@@ -43,4 +42,5 @@
 #include "piercedStorageRange.hpp"
 #include "proxyVector.hpp"
 
+#include "moduleEnd.hpp"
 #endif
