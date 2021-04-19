@@ -21,7 +21,6 @@
  *  along with bitpit. If not, see <http://www.gnu.org/licenses/>.
  *
 \*---------------------------------------------------------------------------*/
-
 #if BITPIT_ENABLE_MPI==1
 
 #include <mpi.h>
@@ -144,7 +143,7 @@ std::vector<adaption::Info> VolOctreeNonUniform::_partitioningPrepare(const std:
 	std::vector<adaption::Info> partitioningData;
 	if (trackPartitioning) {
 		int currentRank = getRank();
-		PabloNonUniform::LoadBalanceRanges loadBalanceRanges = m_tree->evalLoadBalanceRanges(m_partitioningOctantWeights.get());
+		PabloUniform::LoadBalanceRanges loadBalanceRanges = m_tree->evalLoadBalanceRanges(m_partitioningOctantWeights.get());
 		for (const auto &entry : loadBalanceRanges.sendRanges) {
 			int receiver = entry.first;
 			if (receiver == currentRank) {
@@ -152,7 +151,7 @@ std::vector<adaption::Info> VolOctreeNonUniform::_partitioningPrepare(const std:
 			}
 
 			adaption::Type adaptionType;
-			if (loadBalanceRanges.sendAction == PabloNonUniform::LoadBalanceRanges::ACTION_DELETE) {
+			if (loadBalanceRanges.sendAction == PabloUniform::LoadBalanceRanges::ACTION_DELETE) {
 				adaptionType = adaption::TYPE_DELETION;
 			} else {
 				adaptionType = adaption::TYPE_PARTITION_SEND;

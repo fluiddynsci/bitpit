@@ -141,8 +141,6 @@ private:
                                                          -Info[12/13]: true if octant is new after refinement/coarsening \n
                                                          -Info[14]   : true if balancing is required for this octant \n
                                                          -Info[15]   : Aux */
-    int8_t                          m_marker;       /**< Set for Refinement(m>0) or Coarsening(m<0) |m|-times */
-    uint8_t                         m_level : 6;        /**< Refinement level (0=root) */
     uint8_t                         m_dim : 2;          /**< Dimension of octant (2D/3D) */
     int                             m_ghost;        /**< Ghost specifier:\n
                                                          -1 : internal, \n
@@ -222,7 +220,6 @@ public:
     uint32_t        getLogicalSize() const;
     uint64_t        getLogicalArea() const;
     uint64_t        getLogicalVolume() const;
-    darray3         getLogicalCenter(uint32_t logicalSize) const;
     darray3         getLogicalCenter() const;
     darray3         getLogicalFaceCenter(uint8_t iface) const;
     darray3         getLogicalEdgeCenter(uint8_t iedge) const;
@@ -285,29 +282,6 @@ Octant::setMarker(int8_t marker){
 	if (marker != m_marker)
 		m_info[OctantInfo::INFO_AUX] = true;
 	this->m_marker = marker;
-};
-
-/*! Get the coordinates of the center of an octant in logical domain.
- * \return Array[3] with the coordinates of the center of octant.
- */
-inline darray3
-Octant::getLogicalCenter(uint32_t logicalSize) const{
-	double	dh;
-	darray3 center;
-
-	dh = double(logicalSize)*0.5;
-	center[0] = (double)m_x + dh;
-	center[1] = (double)m_y + dh;
-	center[2] = (double)m_z + double(m_dim-2)*dh;
-	return center;
-};
-
-/*! Get the coordinates of the center of an octant in logical domain.
- * \return Array[3] with the coordinates of the center of octant.
- */
-inline darray3
-Octant::getLogicalCenter() const{
-    return getLogicalCenter(getLogicalSize());
 };
 
 /*! Get the size of an octant in logical domain, i.e. the side length.

@@ -433,8 +433,6 @@ Octant::getLogicalVolume() const{
 	return sm_treeConstants[m_dim].volumes[m_level];
 };
 
-<<<<<<< HEAD
-=======
 // =================================================================================== //
 
 /*! Get the coordinates of the center of an octant in logical domain.
@@ -451,7 +449,6 @@ Octant::getLogicalCenter() const{
 	center[2] = getLogicalZ() + double(m_dim-2)*dh;
 	return center;
 };
->>>>>>> 58023c0e749e214d7d2f5a7e1a16cce7d2d5e431
 
 // =================================================================================== //
 
