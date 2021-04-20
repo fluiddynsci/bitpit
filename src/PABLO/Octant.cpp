@@ -623,7 +623,7 @@ unsigned int Octant::getBinarySize()
     binarySize += sizeof(int); // ghost layer
     binarySize += INFO_ITEM_COUNT * sizeof(bool); // info
 
-    return binarySize;
+    return std::max((size_t)binarySize, sizeof(Octant));
 }
 
 // =================================================================================== //
