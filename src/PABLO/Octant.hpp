@@ -41,7 +41,9 @@ class Octant;
 
 }
 
+template <>
 bitpit::IBinaryStream& operator>>(bitpit::IBinaryStream &buffer, bitpit::Octant& octant);
+template <>
 bitpit::OBinaryStream& operator<<(bitpit::OBinaryStream &buffer, const bitpit::Octant& octant);
 
 namespace bitpit {
@@ -98,8 +100,8 @@ class Octant{
     friend class ParaTree;
     friend class Global;
 
-    friend bitpit::OBinaryStream& (::operator<<) (bitpit::OBinaryStream& buf, const Octant& octant);
-    friend bitpit::IBinaryStream& (::operator>>) (bitpit::IBinaryStream& buf, Octant& octant);
+    friend bitpit::OBinaryStream& ::operator<< <> (bitpit::OBinaryStream& buf, const Octant& octant);
+    friend bitpit::IBinaryStream& ::operator>> <> (bitpit::IBinaryStream& buf, Octant& octant);
 
 
     // =================================================================================== //
