@@ -40,7 +40,8 @@
  * \param[in] octant is the octant object
  * \result Returns the same input stream received in input.
  */
-bitpit::IBinaryStream& operator>>(bitpit::IBinaryStream &buffer, bitpit::Octant &octant)
+template<>
+bitpit::IBinaryStream& operator>> <> (bitpit::IBinaryStream &buffer, bitpit::Octant &octant)
 {
     uint8_t dimensions;
     buffer >> dimensions;
@@ -73,7 +74,8 @@ bitpit::IBinaryStream& operator>>(bitpit::IBinaryStream &buffer, bitpit::Octant 
  * \param[in] octant is the octant object
  * \result Returns the same output stream received in input.
  */
-bitpit::OBinaryStream& operator<<(bitpit::OBinaryStream  &buffer, const bitpit::Octant &octant)
+template<>
+bitpit::OBinaryStream& operator<< <> (bitpit::OBinaryStream  &buffer, const bitpit::Octant &octant)
 {
     buffer << octant.m_dim;
     buffer << octant.m_level;
@@ -623,7 +625,7 @@ unsigned int Octant::getBinarySize()
     binarySize += sizeof(int); // ghost layer
     binarySize += INFO_ITEM_COUNT * sizeof(bool); // info
 
-    return std::max((size_t)binarySize, sizeof(Octant));
+    return binarySize;
 }
 
 // =================================================================================== //
