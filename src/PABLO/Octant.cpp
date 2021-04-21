@@ -235,34 +235,6 @@ Octant::getLogicalCoordinates() const{
 	return coords;
 };
 
-/*! Get the coordinates of an octant, i.e. the coordinates of its node 0.
- * \return Coordinate X of node 0.
- */
-uint32_t
-Octant::getLogicalX() const{
-	return PABLO::computeCoordinate3D(m_morton, 0);
-};
-
-/*! Get the coordinates of an octant, i.e. the coordinates of its node 0.
- * \return Coordinate Y of node 0.
- */
-uint32_t
-Octant::getLogicalY() const{
-	return PABLO::computeCoordinate3D(m_morton, 1);
-};
-
-/*! Get the coordinates of an octant, i.e. the coordinates of its node 0.
- * \return Coordinate Z of node 0.
- */
-uint32_t
-Octant::getLogicalZ() const{
-	if (m_dim == 3) {
-		return PABLO::computeCoordinate3D(m_morton, 2);
-	} else {
-		return 0;
-	}
-};
-
 /*! Get the bound flag on an octant face.
  * \param[in] face local index of the face.
  * \return true if the face is a boundary.
@@ -435,22 +407,6 @@ Octant::getLogicalVolume() const{
 	return sm_treeConstants[m_dim].volumes[m_level];
 };
 
-// =================================================================================== //
-
-/*! Get the coordinates of the center of an octant in logical domain.
- * \return Array[3] with the coordinates of the center of octant.
- */
-darray3
-Octant::getLogicalCenter() const{
-	double	dh;
-	darray3 center;
-
-	dh = double(getLogicalSize())*0.5;
-	center[0] = getLogicalX() + dh;
-	center[1] = getLogicalY() + dh;
-	center[2] = getLogicalZ() + double(m_dim-2)*dh;
-	return center;
-};
 
 // =================================================================================== //
 
