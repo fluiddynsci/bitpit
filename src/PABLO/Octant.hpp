@@ -222,6 +222,7 @@ public:
     uint32_t        getLogicalSize() const;
     uint64_t        getLogicalArea() const;
     uint64_t        getLogicalVolume() const;
+    darray3         getLogicalCenter(const bitpit::TreeConstants &treeConstants) const;
     darray3         getLogicalCenter() const;
     darray3         getLogicalFaceCenter(uint8_t iface) const;
     darray3         getLogicalEdgeCenter(uint8_t iedge) const;
@@ -301,10 +302,18 @@ Octant::getLogicalSize(const bitpit::TreeConstants &treeConstants) const{
  */
 inline darray3
 Octant::getLogicalCenter() const{
+    return this->getLogicalCenter(this->getTreeConstants());
+}
+
+/*! Get the coordinates of the center of an octant in logical domain.
+ * \return Array[3] with the coordinates of the center of octant.
+ */
+inline darray3
+Octant::getLogicalCenter(const bitpit::TreeConstants &treeConstants) const{
 	double	dh;
 	darray3 center;
 
-	dh = double(getLogicalSize())*0.5;
+	dh = double(getLogicalSize(treeConstants))*0.5;
 	center[0] = getLogicalX() + dh;
 	center[1] = getLogicalY() + dh;
 	center[2] = getLogicalZ() + double(m_dim-2)*dh;
