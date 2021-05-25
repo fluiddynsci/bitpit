@@ -576,6 +576,20 @@ void VolOctreeNonUniform::__setDimension(int dimension)
 }
 
 /*!
+ * Enables or disables expert mode.
+ *
+ * When expert mode is enabled, it will be possible to change the
+ * patch using low level functions (e.g., it will be possible to
+ * add individual cells, add vertices, delete cells, ...).
+ *
+ * \param expert if true, the expert mode will be enabled
+ */
+void VolOctreeNonUniform::setExpert(bool expert)
+{
+	VolumeKernel::setExpert(expert);
+}
+
+/*!
 	Set the bounding box
  */
 void VolOctreeNonUniform::setBoundingBox()
