@@ -23,6 +23,7 @@ bitpit_binary(
     deps = [
         ":PABLO",
         ":levelset",
+        ":volunstructured",
     ],
 )
 
@@ -105,6 +106,18 @@ bitpit_library(
 
 bitpit_library(
     name = "volcartesian",
+    deps = [
+        ":IO",
+        ":common",
+        ":communications",
+        ":containers",
+        ":operators",
+        ":patchkernel",
+    ],
+)
+
+bitpit_library(
+    name = "volunstructured",
     deps = [
         ":IO",
         ":common",
