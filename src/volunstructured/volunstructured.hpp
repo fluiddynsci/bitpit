@@ -48,6 +48,9 @@ public:
 	VolUnstructured(int id, int dimension);
 #endif
 
+	VolUnstructured(const PatchKernel &other);
+    VolUnstructured(PatchKernel&& other);
+
 	~VolUnstructured();
 
 	std::unique_ptr<PatchKernel> clone() const override;

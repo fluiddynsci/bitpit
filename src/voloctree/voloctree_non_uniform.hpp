@@ -79,8 +79,6 @@ public:
 
     std::unique_ptr<PatchKernel> clone() const override;
 
-    void setExpert(bool expert);
-
     void reset() override;
     void setDimension(int dimension) override;
 

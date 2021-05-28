@@ -738,7 +738,10 @@ protected:
 	PatchKernel(int dimension, bool expert);
 	PatchKernel(int id, int dimension, bool expert);
 #endif
+
 	PatchKernel(const PatchKernel &other);
+	PatchKernel(PatchKernel&& other);
+
     PatchKernel & operator=(const PatchKernel &other) = delete;
 
 	void clearBoundingBox();

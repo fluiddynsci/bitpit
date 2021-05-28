@@ -321,6 +321,140 @@ PatchKernel::PatchKernel(const PatchKernel &other)
 }
 
 /*!
+	Move constructor.
+
+	\param other is another patch whose content is copied into this
+*/
+PatchKernel::PatchKernel(PatchKernel&& other)
+    : VTKBaseStreamer(other),
+      m_vertices(other.m_vertices),
+      m_cells(other.m_cells),
+      m_interfaces(other.m_interfaces),
+      m_alteredCells(other.m_alteredCells),
+      m_alteredInterfaces(other.m_alteredInterfaces),
+      m_nInternalVertices(other.m_nInternalVertices),
+#if BITPIT_ENABLE_MPI==1
+      m_nGhostVertices(other.m_nGhostVertices),
+#endif
+      m_lastInternalVertexId(other.m_lastInternalVertexId),
+#if BITPIT_ENABLE_MPI==1
+      m_firstGhostVertexId(other.m_firstGhostVertexId),
+#endif
+      m_nInternalCells(other.m_nInternalCells),
+#if BITPIT_ENABLE_MPI==1
+      m_nGhostCells(other.m_nGhostCells),
+#endif
+      m_lastInternalCellId(other.m_lastInternalCellId),
+#if BITPIT_ENABLE_MPI==1
+      m_firstGhostCellId(other.m_firstGhostCellId),
+#endif
+      m_vtk(other.m_vtk),
+      m_vtkWriteTarget(other.m_vtkWriteTarget),
+      m_vtkVertexMap(other.m_vtkVertexMap),
+      m_boxFrozen(other.m_boxFrozen),
+      m_boxDirty(other.m_boxDirty),
+      m_boxMinPoint(other.m_boxMinPoint),
+      m_boxMaxPoint(other.m_boxMaxPoint),
+      m_boxMinCounter(other.m_boxMinCounter),
+      m_boxMaxCounter(other.m_boxMaxCounter),
+      m_adjacenciesBuildStrategy(other.m_adjacenciesBuildStrategy),
+      m_interfacesBuildStrategy(other.m_interfacesBuildStrategy),
+      m_spawnStatus(other.m_spawnStatus),
+      m_adaptionStatus(other.m_adaptionStatus),
+      m_expert(other.m_expert),
+      m_dimension(other.m_dimension),
+      m_toleranceCustom(other.m_toleranceCustom),
+      m_tolerance(other.m_tolerance),
+      m_rank(other.m_rank),
+      m_nProcessors(other.m_nProcessors)
+#if BITPIT_ENABLE_MPI==1
+      , m_communicator(MPI_COMM_NULL),
+      m_partitioningStatus(other.m_partitioningStatus),
+      m_owner(other.m_owner),
+      m_haloSize(other.m_haloSize),
+      m_partitioningCellsTag(other.m_partitioningCellsTag),
+      m_partitioningVerticesTag(other.m_partitioningVerticesTag),
+      m_partitioningSerialization(other.m_partitioningSerialization),
+      m_partitioningOutgoings(other.m_partitioningOutgoings),
+      m_partitioningGlobalExchanges(other.m_partitioningGlobalExchanges),
+      m_partitioningInfoDirty(other.m_partitioningInfoDirty),
+      m_ghostVertexOwners(other.m_ghostVertexOwners),
+      m_ghostVertexExchangeTargets(other.m_ghostVertexExchangeTargets),
+      m_ghostVertexExchangeSources(other.m_ghostVertexExchangeSources),
+      m_ghostCellOwners(other.m_ghostCellOwners),
+      m_ghostCellExchangeTargets(other.m_ghostCellExchangeTargets),
+      m_ghostCellExchangeSources(other.m_ghostCellExchangeSources)
+#endif
+{
+	// Create index generators
+	if (other.m_vertexIdGenerator) {
+		m_vertexIdGenerator = std::unique_ptr<IndexGenerator<long>>(new IndexGenerator<long>(*(other.m_vertexIdGenerator)));
+	}
+
+	if (other.m_interfaceIdGenerator) {
+		m_interfaceIdGenerator = std::unique_ptr<IndexGenerator<long>>(new IndexGenerator<long>(*(other.m_interfaceIdGenerator)));
+	}
+
+	if (other.m_cellIdGenerator) {
+		m_cellIdGenerator = std::unique_ptr<IndexGenerator<long>>(new IndexGenerator<long>(*(other.m_cellIdGenerator)));
+	}
+
+	// Register the patch
+	patch::manager().registerPatch(this);
+
+	// Update the VTK streamer
+	//
+	// The pointer to VTK streamers are copied, if there are pointer to the
+	// original object they have to be replace with a pointer to this object.
+	std::vector<std::string> streamedGeomFields;
+	streamedGeomFields.reserve(m_vtk.getGeomDataCount());
+	for (auto itr = m_vtk.getGeomDataBegin(); itr != m_vtk.getGeomDataEnd(); ++itr) {
+		const VTKField &field = *itr;
+		if (&field.getStreamer() != &other) {
+			continue;
+		}
+
+		streamedGeomFields.push_back(field.getName());
+	}
+
+	for (const std::string &name : streamedGeomFields) {
+		const VTKField &field = *(m_vtk.findGeomData(name));
+		VTKField updatedField(field);
+		updatedField.setStreamer(*this);
+
+		m_vtk.setGeomData(std::move(updatedField));
+	}
+
+	std::vector<std::string> streamedDataFields;
+	streamedDataFields.reserve(m_vtk.getDataCount());
+	for (auto itr = m_vtk.getDataBegin(); itr != m_vtk.getDataEnd(); ++itr) {
+		const VTKField &field = *itr;
+		if (&field.getStreamer() != &other) {
+			continue;
+		}
+
+		streamedDataFields.push_back(field.getName());
+	}
+
+	for (const std::string &name : streamedDataFields) {
+		const VTKField &field = *(m_vtk.findData(name));
+		VTKField updatedField(field);
+		updatedField.setStreamer(*this);
+
+		m_vtk.removeData(field.getName());
+		m_vtk.addData(std::move(updatedField));
+	}
+
+#if BITPIT_ENABLE_MPI==1
+	// Set the communicator
+	MPI_Comm communicator = other.getCommunicator();
+	if (communicator != MPI_COMM_NULL) {
+		initializeCommunicator(communicator);
+	}
+#endif
+}
+
+/*!
 	Initialize the patch
 */
 #if BITPIT_ENABLE_MPI==1

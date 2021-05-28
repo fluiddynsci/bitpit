@@ -130,6 +130,20 @@ VolumeKernel::VolumeKernel(int id, int dimension, bool expert)
 }
 
 /*!
+	Copy Constructor
+*/
+VolumeKernel::VolumeKernel(const PatchKernel &other) : PatchKernel(other) {
+
+}
+
+/*!
+	Move Constructor
+*/
+VolumeKernel::VolumeKernel(PatchKernel&& other) : PatchKernel(std::move(other)) {
+
+}
+
+/*!
 	Destroys the patch.
 */
 VolumeKernel::~VolumeKernel()

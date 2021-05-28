@@ -54,7 +54,8 @@ protected:
 	VolumeKernel(int dimension, bool expert);
 	VolumeKernel(int id, int dimension, bool expert);
 #endif
-
+	VolumeKernel(const PatchKernel &other);
+	VolumeKernel(PatchKernel&& other);
 };
 
 }

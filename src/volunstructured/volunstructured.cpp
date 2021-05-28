@@ -119,6 +119,16 @@ VolUnstructured::VolUnstructured(int id, int dimension)
 {
 }
 
+VolUnstructured::VolUnstructured(const PatchKernel &other) : VolumeKernel(other) {
+	
+}
+
+
+VolUnstructured::VolUnstructured(PatchKernel&& other) : VolumeKernel(std::move(other)) {
+
+}
+
+
 /*!
 	Destroys the patch.
 */
